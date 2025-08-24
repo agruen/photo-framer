@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+
+{% block title %}Create Slideshow - Photo Frame Admin{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <h1><i class="fas fa-plus"></i> Create New Slideshow</h1>
+        <p class="text-muted">Upload a ZIP file containing your photos and configure your slideshow settings.</p>
+        
+        <form method="POST" enctype="multipart/form-data" id="slideshowForm">
+            <!-- Basic Settings -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-cog"></i> Basic Settings</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Slideshow Name *</label>
+                                <input type="text" class="form-control" id="name" name="name" required>
+                                <div class="form-text">A descriptive name for your slideshow</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="rotation_interval" class="form-label">Rotation Interval (seconds)</label>
+                                <input type="number" class="form-control" id="rotation_interval" 
+                                       name="rotation_interval" value="60" min="5" max="600">
+                                <div class="form-text">How often images change (5-600 seconds)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Screen Resolution -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-desktop"></i> Screen Resolution</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="screen_width" class="form-label">Width (pixels)</label>
+                                <input type="number" class="form-control" id="screen_width" 
+                                       name="screen_width" value="1280" min="640" max="4096">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="screen_height" class="form-label">Height (pixels)</label>
+                                <input type="number" class="form-control" id="screen_height" 
+                                       name="screen_height" value="800" min="480" max="2160">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-0">
+                        <small class="text-muted">
+                            <strong>Common resolutions:</strong>
+                            <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="setResolution(1280, 800)">1280×800</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setResolution(1920, 1080)">1920×1080</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setResolution(1024, 768)">1024×768</button>
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Weather Settings -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-cloud"></i> Weather Integration <small class="text-muted">(Optional)</small></h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="weather_zip" class="form-label">ZIP Code</label>
+                                <input type="text" class="form-control" id="weather_zip" 
+                                       name="weather_zip" placeholder="10001">
+                                <div class="form-text">US ZIP code for weather data</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="weather_api_key" class="form-label">OpenWeatherMap API Key</label>
+                                <input type="text" class="form-control" id="weather_api_key" 
+                                       name="weather_api_key" placeholder="Get free key from openweathermap.org">
+                                <div class="form-text">
+                                    Get a free API key from 
+                                    <a href="https://openweathermap.org/api" target="_blank">openweathermap.org</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- File Upload -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-upload"></i> Photo Upload</h5>
+                </div>
+                <div class="card-body">
+                    <div class="upload-area" id="uploadArea">
+                        <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                        <h4>Drop ZIP file here or click to select</h4>
+                        <p class="text-muted">
+                            Upload a ZIP file containing your photos (JPG, PNG, BMP, TIFF)<br>
+                            Maximum file size: 10GB
+                        </p>
+                        <input type="file" id="zip_file" name="zip_file" accept=".zip" required style="display: none;">
+                        <button type="button" class="btn btn-primary" onclick="document.getElementById('zip_file').click()">
+                            <i class="fas fa-folder-open"></i> Select ZIP File
+                        </button>
+                    </div>
+                    
+                    <div id="fileInfo" style="display: none;" class="mt-3">
+                        <div class="alert alert-info">
+                            <strong>Selected file:</strong> <span id="fileName"></span><br>
+                            <strong>Size:</strong> <span id="fileSize"></span>
+                        </div>
+                    </div>
+                    
+                    <!-- Upload Progress -->
+                    <div class="progress-container">
+                        <div class="progress">
+                            <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <small class="text-muted mt-2 d-block" id="progressText">Preparing upload...</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Submit Button -->
+            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                <a href="{{ url_for('admin_dashboard') }}" class="btn btn-secondary me-md-2">
+                    <i class="fas fa-arrow-left"></i> Cancel
+                </a>
+                <button type="submit" class="btn btn-success" id="submitBtn">
+                    <i class="fas fa-plus"></i> Create Slideshow
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function setResolution(width, height) {
+    document.getElementById('screen_width').value = width;
+    document.getElementById('screen_height').value = height;
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('zip_file');
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    const form = document.getElementById('slideshowForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const progressContainer = document.querySelector('.progress-container');
+    const progressBar = document.querySelector('.progress-bar');
+    const progressText = document.getElementById('progressText');
+
+    // Drag and drop functionality
+    uploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0 && files[0].name.toLowerCase().endsWith('.zip')) {
+            fileInput.files = files;
+            showFileInfo(files[0]);
+        } else {
+            alert('Please select a ZIP file');
+        }
+    });
+
+    uploadArea.addEventListener('click', function() {
+        fileInput.click();
+    });
+
+    fileInput.addEventListener('change', function(e) {
+        if (e.target.files.length > 0) {
+            showFileInfo(e.target.files[0]);
+        }
+    });
+
+    function showFileInfo(file) {
+        fileName.textContent = file.name;
+        fileSize.textContent = formatFileSize(file.size);
+        fileInfo.style.display = 'block';
+    }
+
+    // Form submission with progress
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(form);
+        
+        // Show progress
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+        progressContainer.style.display = 'block';
+        
+        const xhr = new XMLHttpRequest();
+        
+        // Upload progress
+        xhr.upload.addEventListener('progress', function(e) {
+            if (e.lengthComputable) {
+                const percentComplete = (e.loaded / e.total) * 100;
+                progressBar.style.width = percentComplete + '%';
+                progressText.textContent = `Uploading... ${Math.round(percentComplete)}%`;
+            }
+        });
+        
+        xhr.onload = function() {
+            if (xhr.status === 200) {
+                progressText.textContent = 'Upload complete! Redirecting...';
+                // Redirect will be handled by the server response
+                window.location.href = xhr.responseURL || '{{ url_for("admin_dashboard") }}';
+            } else {
+                alert('Upload failed. Please try again.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-plus"></i> Create Slideshow';
+                progressContainer.style.display = 'none';
+            }
+        };
+        
+        xhr.onerror = function() {
+            alert('Upload failed. Please check your connection and try again.');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-plus"></i> Create Slideshow';
+            progressContainer.style.display = 'none';
+        };
+        
+        xhr.open('POST', form.action);
+        xhr.send(formData);
+    });
+});
+</script>
+{% endblock %}

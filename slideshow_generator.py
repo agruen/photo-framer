@@ -43,7 +43,7 @@ def generate_slideshow_html(processed_images, output_dir, zip_code, api_key, scr
     
     # Convert image filenames to relative paths for HTML slideshow
     # Filter out any None values from failed image processing
-    image_list = [f"./{img}" for img in processed_images if img is not None]
+    image_list = [img for img in processed_images if img is not None]
     # Convert to JSON format for embedding in JavaScript
     image_list_json = json.dumps(image_list)
     

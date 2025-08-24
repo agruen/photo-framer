@@ -1,6 +1,22 @@
 # Photo Frame Slideshow Generator
 
-A complete Python toolkit that intelligently crops photos with face detection and creates beautiful HTML slideshows for digital photo frames. Features weather integration, automatic image rotation, and real-time clock display.
+A complete Python toolkit and web server for creating beautiful digital photo frame slideshows. Features intelligent face-aware cropping, weather integration, and a full web admin interface for managing multiple slideshows.
+
+## Two Ways to Use
+
+### 🖥️ **Web Server (Recommended)**
+Complete Dockerized web application with admin interface:
+- Upload ZIP files via drag-and-drop web interface
+- Background processing with real-time progress updates
+- Generate secure URLs for sharing slideshows
+- Multi-user slideshow hosting with 256-char random URLs
+- Perfect for running on a server or Raspberry Pi
+
+### 💻 **Command Line Tools**
+Original standalone Python scripts for local processing:
+- Process photos locally with existing face detection
+- Generate slideshows from command line
+- Perfect for one-time use or scripting
 
 ## Features
 
@@ -22,15 +38,40 @@ A complete Python toolkit that intelligently crops photos with face detection an
 - **Responsive Design**: Configurable screen dimensions for any display device
 - **Elegant Overlays**: Weather and clock with attractive text shadows for readability
 
-## Setup
+## Quick Start
 
-1. **Quick Setup (Recommended):**
+### 🖥️ Web Server Setup (Recommended)
+
+1. **Start the server:**
+   ```bash
+   git clone <your-repo>
+   cd Photo-Framer
+   ./start-server.sh
+   ```
+
+2. **Access admin interface:**
+   - Open http://localhost:5000 in your browser
+   - Login with password: `changeme123` (change this!)
+   - Click "Create New Slideshow"
+
+3. **Create slideshow:**
+   - Drag and drop ZIP file with photos
+   - Configure screen size and weather settings
+   - Watch real-time processing progress
+   - Generate secure URLs to share
+
+📖 **Full server documentation:** [README-SERVER.md](README-SERVER.md)
+
+---
+
+### 💻 Command Line Setup (Original)
+
+1. **Quick Setup:**
    ```bash
    git clone <your-repo>
    cd Photo-Framer
    ./run_complete.sh
    ```
-   The script will automatically set up the virtual environment and install dependencies.
 
 2. **Manual Setup:**
    ```bash
@@ -39,21 +80,19 @@ A complete Python toolkit that intelligently crops photos with face detection an
    pip install opencv-python Pillow numpy
    ```
 
-3. **Get Weather API Key (Optional):**
-   - Go to [OpenWeatherMap API](https://openweathermap.org/api)
-   - Sign up for free account
-   - Get your API key from the dashboard
-
 ## Usage
 
-### Complete Slideshow Generation (Recommended)
-The interactive script will prompt you for all settings:
+### Web Interface (Recommended)
 ```bash
-./run_complete.sh
+./start-server.sh                    # Start web server
+# Open http://localhost:5000 in browser
 ```
 
-### Advanced Usage
-Use the integrated Python script directly:
+### Command Line Tools
+```bash
+./run_complete.sh                    # Interactive slideshow creation
+```
+
 ```bash
 python photo_frame_complete.py \
   --input photos \
@@ -65,21 +104,8 @@ python photo_frame_complete.py \
 ```
 
 ### Legacy Cropping Only
-Process images without slideshow generation:
 ```bash
 ./run.sh --input photos --output cropped_photos
-```
-
-### All Available Options
-```bash
-python photo_frame_complete.py \
-  --input photos \           # Input folder containing photos
-  --output slideshow \       # Output folder for processed photos and slideshow  
-  --width 1280 \            # Target screen width (default: 1280)
-  --height 800 \            # Target screen height (default: 800)
-  --zip 10001 \             # ZIP code for weather data (default: 10001)
-  --api-key YOUR_KEY \      # OpenWeatherMap API key
-  --processes 4             # Number of processes for parallel processing
 ```
 
 ## How It Works

@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./volumes/uploads:/app/uploads
+      - ./volumes/slideshows:/app/slideshows
+      - ./volumes/db:/app/db
+      - ./volumes/temp:/app/temp
+    environment:
+      - FLASK_ENV=production
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DATABASE_URL=sqlite:///db/slideshows.db
+      - ADMIN_PASSWORD=changeme123
+      - SECRET_KEY=your-secret-key-change-this
+      - MAX_CONTENT_LENGTH=10737418240  # 10GB max upload
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  worker:
+    build: .
+    command: celery -A app.tasks worker --loglevel=info --concurrency=2
+    volumes:
+      - ./volumes/uploads:/app/uploads
+      - ./volumes/slideshows:/app/slideshows
+      - ./volumes/db:/app/db
+      - ./volumes/temp:/app/temp
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DATABASE_URL=sqlite:///db/slideshows.db
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.tasks", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - ./volumes/redis:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  uploads:
+    driver: local
+  slideshows:
+    driver: local
+  db:
+    driver: local
+  redis:
+    driver: local
+  temp:
+    driver: local

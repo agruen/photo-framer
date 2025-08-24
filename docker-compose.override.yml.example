@@ -1,0 +1,20 @@
+# Docker Compose Override Example
+# Copy this file to docker-compose.override.yml and customize
+
+version: '3.8'
+
+services:
+  web:
+    environment:
+      # Customize admin password
+      - ADMIN_PASSWORD=your-secure-password-here
+      # Customize secret key
+      - SECRET_KEY=your-long-random-secret-key-here
+    ports:
+      # Change port if needed (host:container)
+      - "8080:5000"
+    
+  worker:
+    environment:
+      # Match web service environment if needed
+      - CUSTOM_SETTING=value
