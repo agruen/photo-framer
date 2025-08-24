@@ -13,12 +13,18 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-# Check if Docker Compose is installed
-if ! command -v docker-compose &> /dev/null; then
+# Check if Docker Compose is available (V1 or V2)
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+elif docker compose version &> /dev/null; then
+    DOCKER_COMPOSE="docker compose"
+else
     echo "❌ Docker Compose is not installed. Please install Docker Compose first:"
     echo "   https://docs.docker.com/compose/install/"
     exit 1
 fi
+
+echo "📦 Using Docker Compose: $DOCKER_COMPOSE"
 
 # Check if we're in the right directory
 if [[ ! -f "docker-compose.yml" ]]; then
@@ -58,13 +64,13 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
 fi
 
 echo "🔧 Building Docker images..."
-if ! docker-compose build; then
+if ! $DOCKER_COMPOSE build; then
     echo "❌ Docker build failed. Check the error messages above."
     exit 1
 fi
 
 echo "🚀 Starting services..."
-if ! docker-compose up -d; then
+if ! $DOCKER_COMPOSE up -d; then
     echo "❌ Failed to start services. Check the error messages above."
     exit 1
 fi
@@ -75,10 +81,10 @@ sleep 10
 
 # Check service health
 echo "🔍 Checking service status..."
-docker-compose ps
+$DOCKER_COMPOSE ps
 
 # Get the web service port
-WEB_PORT=$(docker-compose port web 5000 2>/dev/null | cut -d: -f2 || echo "5000")
+WEB_PORT=$($DOCKER_COMPOSE port web 5000 2>/dev/null | cut -d: -f2 || echo "5000")
 
 # Test if web service is responding
 if curl -f http://localhost:${WEB_PORT}/health > /dev/null 2>&1; then
@@ -99,9 +105,9 @@ if curl -f http://localhost:${WEB_PORT}/health > /dev/null 2>&1; then
     echo "7. Generate secure URLs to share your slideshow"
     echo
     echo "📊 Monitoring:"
-    echo "   View logs:    docker-compose logs -f"
-    echo "   Stop server:  docker-compose down"
-    echo "   Restart:      docker-compose restart"
+    echo "   View logs:    $DOCKER_COMPOSE logs -f"
+    echo "   Stop server:  $DOCKER_COMPOSE down"
+    echo "   Restart:      $DOCKER_COMPOSE restart"
     echo
     echo "💾 Data Location: ./volumes/ (backup this folder!)"
     echo
@@ -110,12 +116,12 @@ else
     echo "   Give it a few more seconds, then try: http://localhost:${WEB_PORT}"
     echo
     echo "📋 Service Status:"
-    docker-compose ps
+    $DOCKER_COMPOSE ps
     echo
     echo "📊 Check logs if there are issues:"
-    echo "   docker-compose logs web"
-    echo "   docker-compose logs worker"
-    echo "   docker-compose logs redis"
+    echo "   $DOCKER_COMPOSE logs web"
+    echo "   $DOCKER_COMPOSE logs worker"
+    echo "   $DOCKER_COMPOSE logs redis"
 fi
 
 echo "✨ Server startup complete!"
