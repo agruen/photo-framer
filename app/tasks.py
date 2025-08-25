@@ -145,6 +145,15 @@ def process_slideshow(self, slideshow_id):
                     output_filename = f"processed_{i+1:04d}_{name}{ext}"
                     output_file_path = os.path.join(output_path, output_filename)
                     
+                    # Emit progress update for current image being processed
+                    emit_progress_update(
+                        slideshow_id, 'processing', progress,
+                        f'Processing image {i+1}/{len(image_files)}: {input_filename}',
+                        total_images=len(image_files),
+                        processed_images=slideshow.processed_images,
+                        current_image=input_filename
+                    )
+                    
                     # Process single image with face detection
                     success = cropper.crop_image(
                         image_file,
@@ -157,6 +166,7 @@ def process_slideshow(self, slideshow_id):
                     if success:
                         processed_images.append(output_filename)
                         slideshow.processed_images += 1
+                        logger.info(f"Successfully processed image {i+1}/{len(image_files)}: {input_filename}")
                     else:
                         logger.warning(f"Failed to process image: {input_filename}")
                     
@@ -164,15 +174,26 @@ def process_slideshow(self, slideshow_id):
                     slideshow.progress = progress
                     db.session.commit()
                     
-                    # Emit progress update every 10 images or on last image
-                    if (i + 1) % 10 == 0 or (i + 1) == len(image_files):
-                        emit_progress_update(
-                            slideshow_id, 'processing', progress,
-                            f'Processed {i+1}/{len(image_files)} images'
-                        )
+                    # Emit completion update for this image
+                    status_msg = "✓ Processed" if success else "⚠ Skipped"
+                    emit_progress_update(
+                        slideshow_id, 'processing', progress,
+                        f'{status_msg} {i+1}/{len(image_files)}: {input_filename}',
+                        total_images=len(image_files),
+                        processed_images=slideshow.processed_images,
+                        current_image=input_filename
+                    )
                     
                 except Exception as e:
                     logger.error(f"Error processing image {image_file}: {str(e)}")
+                    # Emit error update for this image
+                    emit_progress_update(
+                        slideshow_id, 'processing', progress,
+                        f'❌ Error processing {input_filename}: {str(e)[:50]}...',
+                        total_images=len(image_files),
+                        processed_images=slideshow.processed_images,
+                        current_image=input_filename
+                    )
                     continue
             
             if len(processed_images) == 0:
@@ -247,21 +268,25 @@ def process_slideshow(self, slideshow_id):
             return {'error': str(e), 'slideshow_id': slideshow_id}
 
 
-def emit_progress_update(slideshow_id, status, progress, message):
+def emit_progress_update(slideshow_id, status, progress, message, **kwargs):
     """
     Emit progress update via WebSocket if available.
-    This will be implemented when we add WebSocket support.
     """
     try:
         # Import here to avoid circular imports
         from .app import socketio
         if socketio:
-            socketio.emit('progress_update', {
+            update_data = {
                 'slideshow_id': slideshow_id,
                 'status': status,
                 'progress': progress,
                 'message': message
-            }, room=f'slideshow_{slideshow_id}')
+            }
+            # Add any additional data
+            update_data.update(kwargs)
+            
+            socketio.emit('progress_update', update_data, room=f'slideshow_{slideshow_id}')
+            logger.info(f"Emitted progress update for slideshow {slideshow_id}: {progress}% - {message}")
     except Exception as e:
         logger.debug(f"Could not emit progress update: {e}")
         pass  # WebSocket not available, that's OK

@@ -53,9 +53,16 @@
             </div>
             
             <div class="mt-3">
-                <small class="text-muted" id="processingMessage">
-                    Processing will continue in the background. You can close this page and come back later.
-                </small>
+                <div class="d-flex align-items-center mb-2">
+                    <strong class="me-2">Status:</strong>
+                    <span id="processingMessage" class="text-info">
+                        Processing will continue in the background. You can close this page and come back later.
+                    </span>
+                </div>
+                <div id="currentImageContainer" style="display: none;">
+                    <strong>Current Image:</strong>
+                    <span id="currentImage" class="font-monospace text-muted"></span>
+                </div>
             </div>
         </div>
         {% endif %}
@@ -318,14 +325,40 @@ document.addEventListener('DOMContentLoaded', function() {
                 const messageElement = document.getElementById('processingMessage');
                 if (messageElement && data.message) {
                     messageElement.textContent = data.message;
+                    
+                    // Color code based on message content
+                    messageElement.className = 'text-info'; // default
+                    if (data.message.includes('✓ Processed')) {
+                        messageElement.className = 'text-success';
+                    } else if (data.message.includes('⚠ Skipped') || data.message.includes('❌ Error')) {
+                        messageElement.className = 'text-warning';
+                    } else if (data.message.includes('Processing image')) {
+                        messageElement.className = 'text-primary';
+                    }
+                }
+                
+                // Update current image if provided
+                if (data.current_image) {
+                    const currentImageContainer = document.getElementById('currentImageContainer');
+                    const currentImageElement = document.getElementById('currentImage');
+                    if (currentImageContainer && currentImageElement) {
+                        currentImageElement.textContent = data.current_image;
+                        currentImageContainer.style.display = 'block';
+                    }
+                } else {
+                    // Hide current image container if no current image
+                    const currentImageContainer = document.getElementById('currentImageContainer');
+                    if (currentImageContainer) {
+                        currentImageContainer.style.display = 'none';
+                    }
                 }
                 
                 // Update counts if available
-                if (data.total_images) {
+                if (data.total_images !== undefined) {
                     const totalElement = document.getElementById('totalImages');
                     if (totalElement) totalElement.textContent = data.total_images;
                 }
-                if (data.processed_images) {
+                if (data.processed_images !== undefined) {
                     const processedElement = document.getElementById('processedImages');
                     if (processedElement) processedElement.textContent = data.processed_images;
                 }
