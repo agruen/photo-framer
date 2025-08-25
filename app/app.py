@@ -316,8 +316,7 @@ def main():
         timeout = 1800  # 30 minutes
     
     # Use the patched request handler
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False, 
-                request_handler=LongTimeoutWSGIRequestHandler)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
 
 
 if __name__ == '__main__':
