@@ -36,8 +36,9 @@ COPY slideshow_generator.py .
 # Copy new server application
 COPY app/ ./app/
 
-# Copy migration script
+# Copy migration script and gunicorn config
 COPY migrate_db.py .
+COPY gunicorn.conf.py .
 
 # Create necessary directories with proper permissions
 RUN mkdir -p uploads slideshows db temp && \
@@ -53,5 +54,5 @@ HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
 # Expose port
 EXPOSE 5000
 
-# Default command (can be overridden in docker-compose)
-CMD ["python", "-m", "app.app"]
+# Default command using Gunicorn with extended timeouts
+CMD ["gunicorn", "--config", "gunicorn.conf.py", "app.app:create_app()"]

@@ -36,8 +36,20 @@ def migrate_database():
             slideshows = Slideshow.query.all()
             urls = SlideshowURL.query.all()
             
-            backup_data['slideshows'] = [s.to_dict() for s in slideshows]
-            backup_data['urls'] = [u.to_dict() for u in urls]
+            # Create backup with ID mapping for URLs
+            backup_data['slideshows'] = []
+            backup_data['urls'] = []
+            slideshow_id_mapping = {}
+            
+            for slideshow in slideshows:
+                slideshow_dict = slideshow.to_dict()
+                slideshow_id_mapping[slideshow.id] = slideshow_dict['folder_name']
+                backup_data['slideshows'].append(slideshow_dict)
+            
+            for url in urls:
+                url_dict = url.to_dict()
+                url_dict['slideshow_folder_name'] = slideshow_id_mapping.get(url.slideshow_id)
+                backup_data['urls'].append(url_dict)
             
             print(f"Backed up {len(backup_data['slideshows'])} slideshows and {len(backup_data['urls'])} URLs")
             
