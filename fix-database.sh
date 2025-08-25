@@ -3,6 +3,9 @@
 echo "Stopping services..."
 docker compose down
 
+echo "Rebuilding containers with updated migration script..."
+docker compose build --no-cache
+
 echo "Starting Redis (needed for app initialization)..."
 docker compose up -d redis
 

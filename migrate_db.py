@@ -8,11 +8,20 @@ import sys
 import shutil
 from datetime import datetime
 
-# Add the app directory to the Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'app'))
+# Add the current directory to Python path and set up module path
+sys.path.insert(0, '/app')
+os.chdir('/app')
 
-from app.app import create_app
-from app.models import db, Slideshow, SlideshowURL, ProcessingTask
+# Import using module path
+import app.app as app_module
+import app.models as models_module
+
+# Get the classes we need
+create_app = app_module.create_app
+db = models_module.db
+Slideshow = models_module.Slideshow
+SlideshowURL = models_module.SlideshowURL
+ProcessingTask = models_module.ProcessingTask
 
 def migrate_database():
     """Recreate the database with proper relationships"""
