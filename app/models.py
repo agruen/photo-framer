@@ -38,6 +38,7 @@ class Slideshow(db.Model):
     
     # Relationships
     urls = db.relationship('SlideshowURL', backref='slideshow', lazy=True, cascade='all, delete-orphan')
+    processing_tasks = db.relationship('ProcessingTask', backref='slideshow', lazy=True, cascade='all, delete-orphan')
     
     def __repr__(self):
         return f'<Slideshow {self.name}>'
@@ -130,7 +131,6 @@ class ProcessingTask(db.Model):
     started_at = db.Column(db.DateTime)
     completed_at = db.Column(db.DateTime)
     
-    slideshow = db.relationship('Slideshow', backref='processing_tasks')
     
     def __repr__(self):
         return f'<ProcessingTask {self.task_id}>'
