@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   web:
     build: 
@@ -16,7 +14,7 @@ services:
       - FLASK_ENV=production
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - DATABASE_URL=sqlite:///db/slideshows.db
+      - DATABASE_URL=sqlite:////app/db/slideshows.db
       - ADMIN_PASSWORD=changeme123
       - SECRET_KEY=your-secret-key-change-this
       - MAX_CONTENT_LENGTH=10737418240  # 10GB max upload
@@ -42,7 +40,7 @@ services:
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - DATABASE_URL=sqlite:///db/slideshows.db
+      - DATABASE_URL=sqlite:////app/db/slideshows.db
     depends_on:
       - redis
     restart: unless-stopped

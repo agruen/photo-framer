@@ -36,16 +36,12 @@ COPY slideshow_generator.py .
 # Copy new server application
 COPY app/ ./app/
 
-# Create necessary directories
-RUN mkdir -p uploads slideshows db temp
+# Create necessary directories with proper permissions
+RUN mkdir -p uploads slideshows db temp && \
+    chmod -R 777 /app
 
-# Set permissions
-RUN chmod -R 755 /app
-
-# Create non-root user for security
-RUN useradd -r -s /bin/false slideshow && \
-    chown -R slideshow:slideshow /app
-USER slideshow
+# Don't create non-root user to avoid permission issues with volumes
+# USER slideshow
 
 # Health check endpoint
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \

@@ -1,8 +1,6 @@
 # Docker Compose Override Example
 # Copy this file to docker-compose.override.yml and customize
 
-version: '3.8'
-
 services:
   web:
     environment:
