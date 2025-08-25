@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   web:
-    build: .
+    build: 
+      context: .
+      network: host
     ports:
       - "5000:5000"
     volumes:
@@ -28,8 +30,10 @@ services:
       retries: 3
 
   worker:
-    build: .
-    command: celery -A app.tasks worker --loglevel=info --concurrency=2
+    build: 
+      context: .
+      network: host
+    command: celery -A app.tasks worker --loglevel=info --concurrency=1
     volumes:
       - ./volumes/uploads:/app/uploads
       - ./volumes/slideshows:/app/slideshows

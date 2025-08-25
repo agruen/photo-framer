@@ -2,21 +2,19 @@
 
 A complete Python toolkit and web server for creating beautiful digital photo frame slideshows. Features intelligent face-aware cropping, weather integration, and a full web admin interface for managing multiple slideshows.
 
-## Two Ways to Use
+## Complete Dockerized Solution
 
-### 🖥️ **Web Server (Recommended)**
-Complete Dockerized web application with admin interface:
+🖥️ **Web Server with Admin Interface:**
 - Upload ZIP files via drag-and-drop web interface
 - Background processing with real-time progress updates
 - Generate secure URLs for sharing slideshows
 - Multi-user slideshow hosting with 256-char random URLs
-- Perfect for running on a server or Raspberry Pi
+- Works on both AMD64 and ARM64 (Raspberry Pi compatible)
 
-### 💻 **Command Line Tools**
-Original standalone Python scripts for local processing:
-- Process photos locally with existing face detection
-- Generate slideshows from command line
-- Perfect for one-time use or scripting
+💻 **Legacy Command Line Tools:**
+- Original face cropping script: `face_crop_tool.py`
+- Slideshow generator: `slideshow_generator.py`
+- Simple runner: `run.sh`
 
 ## Features
 
@@ -88,25 +86,11 @@ Original standalone Python scripts for local processing:
 # Open http://localhost:5000 in browser
 ```
 
-### Command Line Tools
-```bash
-./run_complete.sh                    # Interactive slideshow creation
-```
-
-```bash
-python photo_frame_complete.py \
-  --input photos \
-  --output slideshow \
-  --width 1280 \
-  --height 800 \
-  --zip 10001 \
-  --api-key YOUR_OPENWEATHER_API_KEY
-```
-
-### Legacy Cropping Only
+### Command Line Tools (Legacy)
 ```bash
 ./run.sh --input photos --output cropped_photos
 ```
+
 
 ## How It Works
 

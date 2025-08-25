@@ -1,25 +1,33 @@
 # Multi-arch Dockerfile for Photo Frame Slideshow Server
 FROM python:3.11-slim
 
-# Install system dependencies
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies - minimal set that works on both amd64 and arm64
 RUN apt-get update && apt-get install -y \
-    libopencv-dev \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    libglib2.0-0 \
-    libgtk-3-0 \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    wget \
+    build-essential \
+    python3-dev \
+    libffi-dev \
+    libssl-dev \
+    libglib2.0-0 \
+    libgomp1 \
+    libjpeg-dev \
+    libpng-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
 # Copy requirements first for better Docker layer caching
 COPY requirements-server.txt .
-RUN pip install --no-cache-dir -r requirements-server.txt
+
+# Install Python packages with increased timeout and no cache for better compatibility
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir --timeout=1000 -r requirements-server.txt
 
 # Copy existing photo processing modules
 COPY face_crop_tool.py .

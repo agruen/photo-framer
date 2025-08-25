@@ -32,6 +32,10 @@ if [[ ! -f "docker-compose.yml" ]]; then
     exit 1
 fi
 
+# Detect architecture for informational purposes
+ARCH=$(uname -m)
+echo "🏗️  Detected architecture: $ARCH"
+
 # Create .env file if it doesn't exist
 if [[ ! -f ".env" ]]; then
     echo "📝 Creating .env configuration file..."

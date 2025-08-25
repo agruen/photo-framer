@@ -1,5 +1,5 @@
-# Existing dependencies
-opencv-python==4.10.0.84
+# Existing dependencies - use headless OpenCV for better ARM compatibility
+opencv-python-headless==4.10.0.84
 Pillow==10.4.0
 numpy==1.26.4
 
