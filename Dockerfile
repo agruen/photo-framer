@@ -36,6 +36,9 @@ COPY slideshow_generator.py .
 # Copy new server application
 COPY app/ ./app/
 
+# Copy migration script
+COPY migrate_db.py .
+
 # Create necessary directories with proper permissions
 RUN mkdir -p uploads slideshows db temp && \
     chmod -R 777 /app
