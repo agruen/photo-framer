@@ -306,7 +306,11 @@ def create_app(config_class=Config):
 def main():
     """Main entry point for running the app"""
     app = create_app()
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+    # Run with extended timeout for large uploads
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False, 
+                allow_unsafe_werkzeug=True, 
+                ping_timeout=1800,  # 30 minutes
+                ping_interval=25)
 
 
 if __name__ == '__main__':

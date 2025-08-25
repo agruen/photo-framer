@@ -6,6 +6,10 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     MAX_CONTENT_LENGTH = int(os.environ.get('MAX_CONTENT_LENGTH', 10 * 1024 * 1024 * 1024))  # 10GB default
     
+    # Extended timeouts for large uploads
+    SEND_FILE_MAX_AGE_DEFAULT = timedelta(seconds=1)
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=24)
+    
     # Database configuration
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:////app/db/slideshows.db'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -27,8 +31,6 @@ class Config:
     # Admin configuration
     ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD') or 'admin123'
     
-    # Session configuration
-    PERMANENT_SESSION_LIFETIME = timedelta(hours=24)
     
     # File upload configuration
     ALLOWED_EXTENSIONS = {'zip'}
