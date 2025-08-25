@@ -15,9 +15,9 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - DATABASE_URL=sqlite:////app/db/slideshows.db
-      - ADMIN_PASSWORD=changeme123
-      - SECRET_KEY=your-secret-key-change-this
-      - MAX_CONTENT_LENGTH=10737418240  # 10GB max upload
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme123}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-this}
+      - MAX_CONTENT_LENGTH=${MAX_CONTENT_LENGTH:-10737418240}
     depends_on:
       - redis
     restart: unless-stopped
