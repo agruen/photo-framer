@@ -228,15 +228,12 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const xhr = new XMLHttpRequest();
         
-        // Set extended timeout for large uploads (30 minutes)
-        xhr.timeout = 30 * 60 * 1000;
-        
         // Upload progress
         xhr.upload.addEventListener('progress', function(e) {
             if (e.lengthComputable) {
                 const percentComplete = (e.loaded / e.total) * 100;
                 progressBar.style.width = percentComplete + '%';
-                progressText.textContent = `Uploading... ${Math.round(percentComplete)}% (${formatFileSize(e.loaded)} / ${formatFileSize(e.total)})`;
+                progressText.textContent = `Uploading... ${Math.round(percentComplete)}%`;
             }
         });
         
@@ -246,49 +243,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Redirect will be handled by the server response
                 window.location.href = xhr.responseURL || '{{ url_for("admin_dashboard") }}';
             } else {
-                console.error('Upload failed with status:', xhr.status, xhr.statusText);
-                alert(`Upload failed (Status: ${xhr.status}). Please try again.`);
+                alert('Upload failed. Please try again.');
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i class="fas fa-plus"></i> Create Slideshow';
                 progressContainer.style.display = 'none';
             }
         };
         
-        xhr.ontimeout = function() {
-            alert('Upload timed out. Your file may be too large or connection too slow. Please try again with a smaller file.');
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="fas fa-plus"></i> Create Slideshow';
-            progressContainer.style.display = 'none';
-        };
-        
         xhr.onerror = function() {
-            console.error('Upload error:', xhr.status, xhr.statusText);
             alert('Upload failed. Please check your connection and try again.');
             submitBtn.disabled = false;
             submitBtn.innerHTML = '<i class="fas fa-plus"></i> Create Slideshow';
             progressContainer.style.display = 'none';
         };
-        
-        // Add progress indicator that shows we're still alive during long uploads
-        let progressInterval;
-        xhr.upload.addEventListener('loadstart', function() {
-            progressInterval = setInterval(function() {
-                if (progressText.textContent.includes('Uploading...')) {
-                    const dots = (progressText.textContent.match(/\./g) || []).length;
-                    if (dots >= 3) {
-                        progressText.textContent = progressText.textContent.replace(/\.+/, '.');
-                    } else {
-                        progressText.textContent += '.';
-                    }
-                }
-            }, 1000);
-        });
-        
-        xhr.upload.addEventListener('loadend', function() {
-            if (progressInterval) {
-                clearInterval(progressInterval);
-            }
-        });
         
         xhr.open('POST', form.action);
         xhr.send(formData);
