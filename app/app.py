@@ -306,7 +306,18 @@ def create_app(config_class=Config):
 def main():
     """Main entry point for running the app"""
     app = create_app()
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+    
+    # For large file uploads, we need to handle this differently
+    # The issue is likely Werkzeug's built-in server timeout
+    import werkzeug.serving
+    
+    # Monkey patch the WSGIRequestHandler to increase timeout
+    class LongTimeoutWSGIRequestHandler(werkzeug.serving.WSGIRequestHandler):
+        timeout = 1800  # 30 minutes
+    
+    # Use the patched request handler
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False, 
+                request_handler=LongTimeoutWSGIRequestHandler)
 
 
 if __name__ == '__main__':

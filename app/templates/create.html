@@ -228,6 +228,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const xhr = new XMLHttpRequest();
         
+        // Set a very long timeout - 10 minutes
+        xhr.timeout = 10 * 60 * 1000;
+        
         // Upload progress
         xhr.upload.addEventListener('progress', function(e) {
             if (e.lengthComputable) {
@@ -243,11 +246,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Redirect will be handled by the server response
                 window.location.href = xhr.responseURL || '{{ url_for("admin_dashboard") }}';
             } else {
-                alert('Upload failed. Please try again.');
+                alert(`Upload failed (${xhr.status}). Please try again.`);
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i class="fas fa-plus"></i> Create Slideshow';
                 progressContainer.style.display = 'none';
             }
+        };
+        
+        xhr.ontimeout = function() {
+            alert('Upload timed out after 10 minutes. Please try with a smaller file.');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-plus"></i> Create Slideshow';
+            progressContainer.style.display = 'none';
         };
         
         xhr.onerror = function() {
