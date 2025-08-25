@@ -20,9 +20,9 @@ class Config:
     CELERY_ENABLE_UTC = True
     
     # Upload configuration
-    UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER') or 'uploads'
-    SLIDESHOW_FOLDER = os.environ.get('SLIDESHOW_FOLDER') or 'slideshows'
-    TEMP_FOLDER = os.environ.get('TEMP_FOLDER') or 'temp'
+    UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER') or '/app/uploads'
+    SLIDESHOW_FOLDER = os.environ.get('SLIDESHOW_FOLDER') or '/app/slideshows'
+    TEMP_FOLDER = os.environ.get('TEMP_FOLDER') or '/app/temp'
     
     # Admin configuration
     ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD') or 'admin123'
