@@ -8,6 +8,7 @@ from functools import wraps
 from flask import Flask, request, render_template, redirect, url_for, flash, jsonify, session, send_file, abort
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config import Config
 from .models import db, Slideshow, SlideshowURL, ProcessingTask
@@ -24,6 +25,9 @@ def create_app(config_class=Config):
     
     app = Flask(__name__)
     app.config.from_object(config_class)
+    
+    # Add reverse proxy support
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
     
     # Initialize extensions
     db.init_app(app)
@@ -222,12 +226,30 @@ def create_app(config_class=Config):
         # Record access
         slideshow_url.record_access()
         
-        # Serve the slideshow HTML file
+        # Read the original slideshow HTML file
         html_path = os.path.join(app.config['SLIDESHOW_FOLDER'], slideshow.folder_name, 'slideshow.html')
         if not os.path.exists(html_path):
             abort(404)
         
-        return send_file(html_path)
+        # Read and modify the HTML to include correct image paths
+        with open(html_path, 'r') as f:
+            html_content = f.read()
+        
+        # Find the image array and replace relative paths with full URLs
+        import re
+        import json
+        
+        # Extract the current images array
+        images_match = re.search(r'var images = (\[.*?\]);', html_content)
+        if images_match:
+            current_images = json.loads(images_match.group(1))
+            # Convert to full URLs with the slideshow key
+            full_url_images = [f"/s/{url_key}/{img}" for img in current_images]
+            # Replace in the HTML
+            new_images_js = f'var images = {json.dumps(full_url_images)};'
+            html_content = html_content.replace(images_match.group(0), new_images_js)
+        
+        return html_content, 200, {'Content-Type': 'text/html'}
     
     @app.route('/s/<url_key>/<path:filename>')
     def slideshow_static(url_key, filename):

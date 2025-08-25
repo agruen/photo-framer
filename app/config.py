@@ -40,6 +40,10 @@ class Config:
     DEFAULT_ROTATION_INTERVAL = 60  # seconds
     URL_KEY_LENGTH = 256
     
+    # Reverse proxy support - auto-detect from headers
+    PREFERRED_URL_SCHEME = None  # Auto-detect from X-Forwarded-Proto
+    SERVER_NAME = None  # Auto-detect from X-Forwarded-Host
+    
     @staticmethod
     def init_app(app):
         pass
