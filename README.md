@@ -1,15 +1,24 @@
 # Photo Frame Slideshow Generator
 
-A complete Python toolkit and web server for creating beautiful digital photo frame slideshows. Features intelligent face-aware cropping, weather integration, and a full web admin interface for managing multiple slideshows.
+A complete Python toolkit and web server for creating beautiful digital photo frame slideshows. Features intelligent face-aware cropping, weather integration, and a modern web admin interface for managing multiple slideshows.
+
+## ✨ New: Bulk Folder Upload Support
+
+🚀 **Major Update - Now supports uploading thousands of images:**
+- **Folder Upload**: Select entire photo folders directly (no ZIP required!)
+- **Batch Processing**: Handles hundreds or thousands of images efficiently
+- **Real-time Progress**: Watch individual file uploads with live progress bars
+- **Memory Optimized**: Processes files in small batches to avoid memory issues
+- **Maintains Structure**: Preserves your original folder organization
 
 ## Complete Dockerized Solution
 
 🖥️ **Web Server with Admin Interface:**
-- Upload ZIP files via drag-and-drop web interface
-- Background processing with real-time progress updates
-- Generate secure URLs for sharing slideshows
-- Multi-user slideshow hosting with 256-char random URLs
-- Works on both AMD64 and ARM64 (Raspberry Pi compatible)
+- **Dual Upload Options**: Upload entire folders OR ZIP files via drag-and-drop
+- **Background Processing**: Real-time progress updates with WebSocket notifications
+- **Secure Sharing**: Generate 256-character random URLs for sharing slideshows
+- **Multi-user Hosting**: Host multiple slideshows simultaneously 
+- **Cross-platform**: Works on AMD64 and ARM64 (Raspberry Pi compatible)
 
 💻 **Legacy Command Line Tools:**
 - Original face cropping script: `face_crop_tool.py`
@@ -18,13 +27,14 @@ A complete Python toolkit and web server for creating beautiful digital photo fr
 
 ## Features
 
-### Photo Processing
-- **Advanced Face Detection**: Multi-method approach using DNN models (when available) and Haar cascade classifiers
+### Photo Upload & Processing
+- **Multiple Upload Methods**: Choose between folder upload or ZIP file upload
+- **Scalable Processing**: Handles 10s to 1000s of images with batch processing
+- **Advanced Face Detection**: Multi-method approach using DNN models and Haar cascade classifiers
 - **Intelligent Cropping**: Rule-of-thirds composition with sophisticated face-aware positioning
 - **Enhanced Detection**: Eye-based face estimation as fallback, with duplicate removal
 - **Smart Composition**: Positions faces optimally using portrait photography principles
 - **Adaptive Image Enhancement**: Dynamic sharpening and quality optimization based on scaling
-- **Batch Processing**: Processes entire folders of images efficiently with multiprocessing
 - **Multiple Face Support**: Handles complex group photos with many faces
 - **Quality Preservation**: LANCZOS resampling with progressive JPEG optimization
 
@@ -53,9 +63,10 @@ A complete Python toolkit and web server for creating beautiful digital photo fr
    - Click "Create New Slideshow"
 
 3. **Create slideshow:**
-   - Drag and drop ZIP file with photos
+   - **Option A**: Click "Select Folder" to upload entire photo folders (thousands of images!)
+   - **Option B**: Drag and drop ZIP file with photos (legacy method)
    - Configure screen size and weather settings
-   - Watch real-time processing progress
+   - Watch real-time batch processing with live progress bars
    - Generate secure URLs to share
 
 📖 **Full server documentation:** [README-SERVER.md](README-SERVER.md)
@@ -125,6 +136,7 @@ If no faces are detected in an image, the tool will:
 - PNG (.png) 
 - BMP (.bmp)
 - TIFF (.tiff, .tif)
+- WEBP (.webp)
 
 ## Output
 
@@ -133,41 +145,35 @@ If no faces are detected in an image, the tool will:
 - Images are saved with high quality (95% JPEG quality)
 - Exact dimensions: 1280x800 pixels (or custom dimensions specified)
 
-## Example Output
+## Web Interface Example
+
+When uploading a folder with hundreds of photos, you'll see:
 
 ```
-🖼️  Photo Frame Slideshow Generator
-=====================================
+🖼️ Photo Frame Slideshow Creator
+=================================
 
-📸 Found 15 images to process
+📁 Selected folder: "Family Photos 2024"
+📸 Images found: 847
+💾 Total size: 2.3 GB
 
-🎯 Step 1: Processing images with face-aware cropping...
-Found 15 image files to process
-Using 4 processes for parallel processing
+🚀 Upload Method: Folder Upload
 
-Progress: 15/15 (100.0%) - Success: 15, Failed: 0
+📤 Uploading batch 1...
+Files 1-20 of 847
+Progress: 847/847 files (100%)
 
-Processing complete!
-Total time: 12.3 seconds
-Successfully processed: 15/15 images
+✓ Processed 1/847: IMG_001.jpg
+✓ Processed 2/847: IMG_002.jpg
+✓ Processed 3/847: IMG_003.jpg
+...
 
-🎭 Step 2: Generating slideshow with weather integration...
-Found 15 images for slideshow
-✅ Slideshow generated: /path/to/slideshow/slideshow.html
+🎭 Processing images with face detection...
+⚡ Found faces in 623 photos
+🎯 Applied intelligent cropping to all images
 
-🎉 Complete! Your photo slideshow is ready!
-==================================================
-
-📁 Processed images: slideshow/
-🌐 Slideshow HTML:   slideshow/slideshow.html
-
-📖 Instructions:
-1. Open slideshow.html in a web browser
-2. Press F11 for full-screen mode  
-3. Images will rotate every 60 seconds
-4. Clock and weather update automatically
-
-✨ Enjoy your digital photo frame!
+✅ Slideshow generated successfully!
+🔗 Secure URL: https://yourserver.com/s/Abc123...
 ```
 
 ## Slideshow Features
@@ -178,3 +184,20 @@ Found 15 images for slideshow
 - **Weather Display**: Shows current temperature and weather icon
 - **Responsive Design**: Works on any device or screen size
 - **Error Handling**: Graceful fallback if weather API is unavailable
+- **Secure URLs**: Each slideshow gets a unique 256-character access URL
+- **Multi-device Access**: Share slideshows across multiple devices simultaneously
+
+## Browser Support
+
+The folder upload feature requires a modern browser that supports:
+- **HTML5 File API**: For folder selection (`webkitdirectory`)
+- **Drag & Drop API**: For drag-and-drop functionality
+- **Fetch API**: For batch file uploads
+
+**Supported Browsers:**
+- ✅ Chrome/Chromium (all versions)
+- ✅ Firefox (50+)
+- ✅ Safari (11.1+)
+- ✅ Edge (79+)
+
+*ZIP upload works in all browsers as fallback option*
