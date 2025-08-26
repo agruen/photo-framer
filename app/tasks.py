@@ -325,3 +325,187 @@ def delete_slideshow_files(self, slideshow_id):
         except Exception as e:
             logger.error(f"Error deleting slideshow files {slideshow_id}: {str(e)}")
             return {'error': str(e), 'slideshow_id': slideshow_id}
+
+
+@celery.task(bind=True, base=DatabaseTask)
+def process_folder_slideshow(self, slideshow_id):
+    """
+    Background task to process a slideshow from folder uploads.
+    
+    Steps:
+    1. Scan folder for image files
+    2. Process images with face-aware cropping
+    3. Generate slideshow HTML
+    4. Update database with results
+    """
+    
+    logger.info(f"Starting folder slideshow processing for slideshow_id: {slideshow_id}")
+    
+    with self.db_session.app_context():
+        # Get slideshow from database
+        slideshow = Slideshow.query.get(slideshow_id)
+        if not slideshow:
+            logger.error(f"Slideshow {slideshow_id} not found")
+            return {'error': 'Slideshow not found'}
+        
+        try:
+            # Update status to processing
+            slideshow.status = 'processing'
+            slideshow.progress = 0
+            db.session.commit()
+            
+            # Emit progress update via WebSocket (if available)
+            emit_progress_update(slideshow_id, 'processing', 0, 'Starting processing...')
+            
+            # Define paths
+            input_path = os.path.join(Config.SLIDESHOW_FOLDER, slideshow.folder_name)
+            
+            if not os.path.exists(input_path):
+                raise ValueError(f"Slideshow folder not found: {input_path}")
+            
+            # Step 1: Scan folder for image files
+            logger.info(f"Scanning folder for images: {input_path}")
+            emit_progress_update(slideshow_id, 'processing', 5, 'Scanning for images...')
+            
+            supported_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp'}
+            image_files = []
+            
+            # Recursively find all image files
+            for root, dirs, files in os.walk(input_path):
+                for file in files:
+                    if any(file.lower().endswith(ext) for ext in supported_extensions):
+                        full_path = os.path.join(root, file)
+                        image_files.append(full_path)
+            
+            logger.info(f"Found {len(image_files)} image files in folder")
+            slideshow.total_images = len(image_files)
+            db.session.commit()
+            
+            if len(image_files) == 0:
+                raise ValueError("No image files found in uploaded folder")
+            
+            emit_progress_update(slideshow_id, 'processing', 15, f'Found {len(image_files)} images')
+            
+            # Step 2: Process images with face-aware cropping
+            logger.info(f"Processing {len(image_files)} images with face detection")
+            emit_progress_update(slideshow_id, 'processing', 20, 'Starting image processing...')
+            
+            cropper = FaceAwareCropper()
+            processed_images = []
+            
+            for i, image_file in enumerate(image_files):
+                try:
+                    # Calculate progress
+                    progress = 20 + int((i / len(image_files)) * 60)  # 20% to 80%
+                    
+                    # Generate output filename
+                    input_filename = os.path.basename(image_file)
+                    name, ext = os.path.splitext(input_filename)
+                    output_filename = f"processed_{i+1:04d}_{name}{ext}"
+                    output_file_path = os.path.join(input_path, output_filename)
+                    
+                    # Emit progress update for current image being processed
+                    emit_progress_update(
+                        slideshow_id, 'processing', progress,
+                        f'Processing image {i+1}/{len(image_files)}: {input_filename}',
+                        total_images=len(image_files),
+                        processed_images=slideshow.processed_images,
+                        current_image=input_filename
+                    )
+                    
+                    # Process single image with face detection
+                    success = cropper.crop_image(
+                        image_file,
+                        output_file_path,
+                        slideshow.screen_width,
+                        slideshow.screen_height,
+                        verbose=False
+                    )
+                    
+                    if success:
+                        processed_images.append(output_filename)
+                        slideshow.processed_images += 1
+                        logger.info(f"Successfully processed image {i+1}/{len(image_files)}: {input_filename}")
+                        
+                        # Remove original file to save space (if it's different from output)
+                        if image_file != output_file_path and os.path.exists(image_file):
+                            os.remove(image_file)
+                    else:
+                        logger.warning(f"Failed to process image: {input_filename}")
+                    
+                    # Update progress
+                    slideshow.progress = progress
+                    db.session.commit()
+                    
+                    # Emit completion update for this image
+                    status_msg = "✓ Processed" if success else "⚠ Skipped"
+                    emit_progress_update(
+                        slideshow_id, 'processing', progress,
+                        f'{status_msg} {i+1}/{len(image_files)}: {input_filename}',
+                        total_images=len(image_files),
+                        processed_images=slideshow.processed_images,
+                        current_image=input_filename
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Error processing image {image_file}: {str(e)}")
+                    # Emit error update for this image
+                    emit_progress_update(
+                        slideshow_id, 'processing', progress,
+                        f'❌ Error processing {input_filename}: {str(e)[:50]}...',
+                        total_images=len(image_files),
+                        processed_images=slideshow.processed_images,
+                        current_image=input_filename
+                    )
+                    continue
+            
+            if len(processed_images) == 0:
+                raise ValueError("No images were successfully processed")
+            
+            logger.info(f"Successfully processed {len(processed_images)} images")
+            emit_progress_update(slideshow_id, 'processing', 80, f'Processed {len(processed_images)} images')
+            
+            # Step 3: Generate slideshow HTML
+            logger.info("Generating slideshow HTML")
+            emit_progress_update(slideshow_id, 'processing', 85, 'Generating slideshow...')
+            
+            html_path = generate_slideshow_html(
+                processed_images=processed_images,
+                output_dir=input_path,
+                zip_code=slideshow.weather_zip or "10001",
+                api_key=slideshow.weather_api_key or "YOUR_API_KEY_HERE",
+                screen_width=slideshow.screen_width,
+                screen_height=slideshow.screen_height
+            )
+            
+            logger.info(f"Generated slideshow HTML: {html_path}")
+            emit_progress_update(slideshow_id, 'processing', 90, 'Slideshow generated')
+            
+            # Step 4: Mark as completed
+            slideshow.status = 'completed'
+            slideshow.progress = 100
+            slideshow.completed_at = datetime.now(timezone.utc)
+            db.session.commit()
+            
+            emit_progress_update(slideshow_id, 'completed', 100, 'Processing completed successfully!')
+            
+            logger.info(f"Folder slideshow processing completed for slideshow_id: {slideshow_id}")
+            
+            return {
+                'slideshow_id': slideshow_id,
+                'status': 'completed',
+                'processed_images': len(processed_images),
+                'html_path': html_path
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing folder slideshow {slideshow_id}: {str(e)}")
+            
+            # Update slideshow status to error
+            slideshow.status = 'error'
+            slideshow.error_message = str(e)
+            db.session.commit()
+            
+            emit_progress_update(slideshow_id, 'error', slideshow.progress, f'Error: {str(e)}')
+            
+            return {'error': str(e), 'slideshow_id': slideshow_id}

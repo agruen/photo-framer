@@ -120,8 +120,19 @@ def create_app(config_class=Config):
             upload_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
             
             try:
-                file.save(upload_path)
-                file_size = os.path.getsize(upload_path)
+                # Stream large files to disk to avoid memory issues
+                file_size = 0
+                with open(upload_path, 'wb') as f:
+                    while True:
+                        chunk = file.stream.read(app.config.get('CHUNK_SIZE', 1024*1024))  # 1MB chunks
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        file_size += len(chunk)
+                
+                # Verify file was written correctly
+                if file_size == 0:
+                    raise Exception("File upload failed - no data received")
                 
                 # Create slideshow record
                 slideshow = Slideshow(
@@ -163,6 +174,148 @@ def create_app(config_class=Config):
                 return render_template('create.html')
         
         return render_template('create.html')
+    
+    @app.route('/create_folder_slideshow', methods=['POST'])
+    @admin_required
+    def create_folder_slideshow():
+        """Create slideshow record for folder uploads"""
+        try:
+            # Get form data
+            name = request.form.get('name', '').strip()
+            screen_width = int(request.form.get('screen_width', app.config['DEFAULT_SCREEN_WIDTH']))
+            screen_height = int(request.form.get('screen_height', app.config['DEFAULT_SCREEN_HEIGHT']))
+            rotation_interval = int(request.form.get('rotation_interval', app.config['DEFAULT_ROTATION_INTERVAL']))
+            weather_zip = request.form.get('weather_zip', '').strip()
+            weather_api_key = request.form.get('weather_api_key', '').strip()
+            total_files = int(request.form.get('total_files', 0))
+            
+            # Validation
+            if not name:
+                return jsonify({'error': 'Slideshow name is required'}), 400
+            
+            if total_files == 0:
+                return jsonify({'error': 'No files to upload'}), 400
+            
+            # Generate unique folder name
+            folder_name = f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+            
+            # Create slideshow record
+            slideshow = Slideshow(
+                name=name,
+                folder_name=folder_name,
+                screen_width=screen_width,
+                screen_height=screen_height,
+                rotation_interval=rotation_interval,
+                weather_zip=weather_zip,
+                weather_api_key=weather_api_key,
+                zip_filename=None,  # No ZIP for folder uploads
+                zip_size=0,
+                status='uploading'  # New status for folder uploads
+            )
+            
+            db.session.add(slideshow)
+            db.session.flush()  # Get the ID
+            
+            # Create slideshow directory
+            slideshow_dir = os.path.join(app.config['SLIDESHOW_FOLDER'], folder_name)
+            os.makedirs(slideshow_dir, exist_ok=True)
+            
+            db.session.commit()
+            
+            return jsonify({'slideshow_id': slideshow.id, 'folder_name': folder_name})
+            
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/upload_batch', methods=['POST'])
+    @admin_required
+    def upload_batch():
+        """Handle batch file uploads for folder slideshows"""
+        try:
+            slideshow_id = request.form.get('slideshow_id')
+            batch_index = request.form.get('batch_index')
+            
+            slideshow = Slideshow.query.get_or_404(slideshow_id)
+            
+            if slideshow.status != 'uploading':
+                return jsonify({'error': 'Slideshow not in upload state'}), 400
+            
+            slideshow_dir = os.path.join(app.config['SLIDESHOW_FOLDER'], slideshow.folder_name)
+            
+            # Process uploaded files
+            files = request.files.getlist('files[]')
+            file_paths = request.form.getlist('file_paths[]')
+            
+            if not files or len(files) == 0:
+                return jsonify({'error': 'No files in batch'}), 400
+            
+            saved_files = []
+            for i, file in enumerate(files):
+                if file and file.filename:
+                    # Get original path if available, otherwise use filename
+                    original_path = file_paths[i] if i < len(file_paths) else file.filename
+                    
+                    # Create subdirectories if needed
+                    if '/' in original_path:
+                        relative_dir = os.path.dirname(original_path)
+                        full_dir = os.path.join(slideshow_dir, relative_dir)
+                        os.makedirs(full_dir, exist_ok=True)
+                    
+                    # Save file with original name/path structure
+                    safe_filename = secure_filename(os.path.basename(original_path))
+                    if '/' in original_path:
+                        relative_dir = os.path.dirname(original_path)
+                        file_path = os.path.join(slideshow_dir, relative_dir, safe_filename)
+                    else:
+                        file_path = os.path.join(slideshow_dir, safe_filename)
+                    
+                    file.save(file_path)
+                    saved_files.append(original_path)
+            
+            return jsonify({
+                'success': True, 
+                'batch_index': batch_index,
+                'files_saved': len(saved_files),
+                'files': saved_files
+            })
+            
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/finalize_slideshow', methods=['POST'])
+    @admin_required
+    def finalize_slideshow():
+        """Finalize slideshow after all files are uploaded"""
+        try:
+            data = request.get_json()
+            slideshow_id = data.get('slideshow_id')
+            
+            slideshow = Slideshow.query.get_or_404(slideshow_id)
+            
+            if slideshow.status != 'uploading':
+                return jsonify({'error': 'Slideshow not in upload state'}), 400
+            
+            # Update status to processing
+            slideshow.status = 'processing'
+            db.session.commit()
+            
+            # Start background processing
+            from .tasks import process_folder_slideshow
+            task = process_folder_slideshow.delay(slideshow.id)
+            
+            # Record processing task
+            processing_task = ProcessingTask(
+                slideshow_id=slideshow.id,
+                task_id=task.id
+            )
+            db.session.add(processing_task)
+            db.session.commit()
+            
+            return jsonify({'success': True, 'task_id': task.id})
+            
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
     
     @app.route('/slideshow/<int:slideshow_id>')
     @admin_required
@@ -315,8 +468,9 @@ def main():
     class LongTimeoutWSGIRequestHandler(werkzeug.serving.WSGIRequestHandler):
         timeout = 1800  # 30 minutes
     
-    # Use the patched request handler
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+    # Use the patched request handler with extended timeouts
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False, 
+                request_handler=LongTimeoutWSGIRequestHandler)
 
 
 if __name__ == '__main__':

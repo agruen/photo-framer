@@ -104,20 +104,63 @@
                     <h5><i class="fas fa-upload"></i> Photo Upload</h5>
                 </div>
                 <div class="card-body">
-                    <div class="upload-area" id="uploadArea">
+                    <!-- Upload Method Selector -->
+                    <div class="mb-4">
+                        <div class="btn-group" role="group" aria-label="Upload method">
+                            <input type="radio" class="btn-check" name="upload_method" id="folder_upload" value="folder" checked>
+                            <label class="btn btn-outline-primary" for="folder_upload">
+                                <i class="fas fa-folder"></i> Upload Folder
+                            </label>
+                            <input type="radio" class="btn-check" name="upload_method" id="zip_upload" value="zip">
+                            <label class="btn btn-outline-primary" for="zip_upload">
+                                <i class="fas fa-file-archive"></i> Upload ZIP
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Folder Upload Area -->
+                    <div class="upload-area" id="folderUploadArea">
+                        <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                        <h4>Drop photos here or select folder</h4>
+                        <p class="text-muted">
+                            Select a folder containing your photos (JPG, PNG, BMP, TIFF, WEBP)<br>
+                            Supports hundreds or thousands of images
+                        </p>
+                        <input type="file" id="folder_files" name="folder_files" 
+                               webkitdirectory multiple accept="image/*" style="display: none;">
+                        <button type="button" class="btn btn-primary" onclick="document.getElementById('folder_files').click()">
+                            <i class="fas fa-folder-open"></i> Select Folder
+                        </button>
+                    </div>
+
+                    <!-- ZIP Upload Area -->
+                    <div class="upload-area" id="zipUploadArea" style="display: none;">
                         <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
                         <h4>Drop ZIP file here or click to select</h4>
                         <p class="text-muted">
                             Upload a ZIP file containing your photos (JPG, PNG, BMP, TIFF)<br>
                             Maximum file size: 10GB
                         </p>
-                        <input type="file" id="zip_file" name="zip_file" accept=".zip" required style="display: none;">
+                        <input type="file" id="zip_file" name="zip_file" accept=".zip" style="display: none;">
                         <button type="button" class="btn btn-primary" onclick="document.getElementById('zip_file').click()">
-                            <i class="fas fa-folder-open"></i> Select ZIP File
+                            <i class="fas fa-file-archive"></i> Select ZIP File
                         </button>
                     </div>
                     
-                    <div id="fileInfo" style="display: none;" class="mt-3">
+                    <!-- File Info for Folder Upload -->
+                    <div id="folderInfo" style="display: none;" class="mt-3">
+                        <div class="alert alert-info">
+                            <strong>Selected folder:</strong> <span id="folderName"></span><br>
+                            <strong>Images found:</strong> <span id="imageCount"></span><br>
+                            <strong>Total size:</strong> <span id="totalSize"></span>
+                        </div>
+                        <div class="file-list-container" style="max-height: 200px; overflow-y: auto;">
+                            <ul id="fileList" class="list-unstyled small text-muted"></ul>
+                        </div>
+                    </div>
+
+                    <!-- File Info for ZIP Upload -->
+                    <div id="zipInfo" style="display: none;" class="mt-3">
                         <div class="alert alert-info">
                             <strong>Selected file:</strong> <span id="fileName"></span><br>
                             <strong>Size:</strong> <span id="fileSize"></span>
@@ -125,11 +168,17 @@
                     </div>
                     
                     <!-- Upload Progress -->
-                    <div class="progress-container">
+                    <div class="progress-container" style="display: none;">
+                        <div class="mb-2">
+                            <small class="text-muted" id="progressText">Preparing upload...</small>
+                            <small class="text-muted float-end" id="progressStats"></small>
+                        </div>
                         <div class="progress">
                             <div class="progress-bar" role="progressbar" style="width: 0%"></div>
                         </div>
-                        <small class="text-muted mt-2 d-block" id="progressText">Preparing upload...</small>
+                        <div class="mt-2">
+                            <small class="text-muted" id="currentFile"></small>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -164,74 +213,264 @@ function formatFileSize(bytes) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    const uploadArea = document.getElementById('uploadArea');
-    const fileInput = document.getElementById('zip_file');
-    const fileInfo = document.getElementById('fileInfo');
-    const fileName = document.getElementById('fileName');
-    const fileSize = document.getElementById('fileSize');
+    const folderUploadArea = document.getElementById('folderUploadArea');
+    const zipUploadArea = document.getElementById('zipUploadArea');
+    const folderInput = document.getElementById('folder_files');
+    const zipInput = document.getElementById('zip_file');
+    const folderInfo = document.getElementById('folderInfo');
+    const zipInfo = document.getElementById('zipInfo');
     const form = document.getElementById('slideshowForm');
     const submitBtn = document.getElementById('submitBtn');
     const progressContainer = document.querySelector('.progress-container');
     const progressBar = document.querySelector('.progress-bar');
     const progressText = document.getElementById('progressText');
+    const progressStats = document.getElementById('progressStats');
+    const currentFile = document.getElementById('currentFile');
+    
+    let selectedFiles = [];
+    let uploadMethod = 'folder';
 
-    // Drag and drop functionality
-    uploadArea.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        uploadArea.classList.add('dragover');
+    // Upload method switcher
+    document.querySelectorAll('input[name="upload_method"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            uploadMethod = this.value;
+            if (uploadMethod === 'folder') {
+                folderUploadArea.style.display = 'block';
+                zipUploadArea.style.display = 'none';
+                folderInfo.style.display = selectedFiles.length > 0 ? 'block' : 'none';
+                zipInfo.style.display = 'none';
+            } else {
+                folderUploadArea.style.display = 'none';
+                zipUploadArea.style.display = 'block';
+                folderInfo.style.display = 'none';
+                zipInfo.style.display = zipInput.files.length > 0 ? 'block' : 'none';
+            }
+        });
     });
 
-    uploadArea.addEventListener('dragleave', function(e) {
+    // Folder upload functionality
+    folderUploadArea.addEventListener('dragover', function(e) {
         e.preventDefault();
-        uploadArea.classList.remove('dragover');
+        folderUploadArea.classList.add('dragover');
     });
 
-    uploadArea.addEventListener('drop', function(e) {
+    folderUploadArea.addEventListener('dragleave', function(e) {
         e.preventDefault();
-        uploadArea.classList.remove('dragover');
+        folderUploadArea.classList.remove('dragover');
+    });
+
+    folderUploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        folderUploadArea.classList.remove('dragover');
+        
+        const files = Array.from(e.dataTransfer.files);
+        const imageFiles = files.filter(file => file.type.startsWith('image/'));
+        
+        if (imageFiles.length > 0) {
+            selectedFiles = imageFiles;
+            showFolderInfo(imageFiles);
+        } else {
+            alert('Please select image files');
+        }
+    });
+
+    folderUploadArea.addEventListener('click', function() {
+        folderInput.click();
+    });
+
+    folderInput.addEventListener('change', function(e) {
+        const files = Array.from(e.target.files);
+        const imageFiles = files.filter(file => file.type.startsWith('image/'));
+        
+        if (imageFiles.length > 0) {
+            selectedFiles = imageFiles;
+            showFolderInfo(imageFiles);
+        }
+    });
+
+    // ZIP upload functionality
+    zipUploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        zipUploadArea.classList.add('dragover');
+    });
+
+    zipUploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        zipUploadArea.classList.remove('dragover');
+    });
+
+    zipUploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        zipUploadArea.classList.remove('dragover');
         
         const files = e.dataTransfer.files;
         if (files.length > 0 && files[0].name.toLowerCase().endsWith('.zip')) {
-            fileInput.files = files;
-            showFileInfo(files[0]);
+            zipInput.files = files;
+            showZipInfo(files[0]);
         } else {
             alert('Please select a ZIP file');
         }
     });
 
-    uploadArea.addEventListener('click', function() {
-        fileInput.click();
+    zipUploadArea.addEventListener('click', function() {
+        zipInput.click();
     });
 
-    fileInput.addEventListener('change', function(e) {
+    zipInput.addEventListener('change', function(e) {
         if (e.target.files.length > 0) {
-            showFileInfo(e.target.files[0]);
+            showZipInfo(e.target.files[0]);
         }
     });
 
-    function showFileInfo(file) {
-        fileName.textContent = file.name;
-        fileSize.textContent = formatFileSize(file.size);
-        fileInfo.style.display = 'block';
+    function showFolderInfo(files) {
+        const folderName = files[0].webkitRelativePath.split('/')[0] || 'Selected files';
+        const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+        
+        document.getElementById('folderName').textContent = folderName;
+        document.getElementById('imageCount').textContent = files.length;
+        document.getElementById('totalSize').textContent = formatFileSize(totalSize);
+        
+        // Show file list (limited to first 10 for display)
+        const fileList = document.getElementById('fileList');
+        fileList.innerHTML = '';
+        files.slice(0, 10).forEach(file => {
+            const li = document.createElement('li');
+            li.textContent = `${file.name} (${formatFileSize(file.size)})`;
+            fileList.appendChild(li);
+        });
+        
+        if (files.length > 10) {
+            const li = document.createElement('li');
+            li.textContent = `... and ${files.length - 10} more files`;
+            li.style.fontStyle = 'italic';
+            fileList.appendChild(li);
+        }
+        
+        folderInfo.style.display = 'block';
+    }
+
+    function showZipInfo(file) {
+        document.getElementById('fileName').textContent = file.name;
+        document.getElementById('fileSize').textContent = formatFileSize(file.size);
+        zipInfo.style.display = 'block';
     }
 
     // Form submission with progress
     form.addEventListener('submit', function(e) {
         e.preventDefault();
         
+        if (uploadMethod === 'folder') {
+            if (selectedFiles.length === 0) {
+                alert('Please select a folder with images');
+                return;
+            }
+            uploadFolderFiles();
+        } else {
+            if (zipInput.files.length === 0) {
+                alert('Please select a ZIP file');
+                return;
+            }
+            uploadZipFile();
+        }
+    });
+
+    async function uploadFolderFiles() {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating slideshow...';
+        progressContainer.style.display = 'block';
+        
+        try {
+            // First, create the slideshow record
+            const slideshowData = new FormData();
+            slideshowData.append('name', document.getElementById('name').value);
+            slideshowData.append('screen_width', document.getElementById('screen_width').value);
+            slideshowData.append('screen_height', document.getElementById('screen_height').value);
+            slideshowData.append('rotation_interval', document.getElementById('rotation_interval').value);
+            slideshowData.append('weather_zip', document.getElementById('weather_zip').value);
+            slideshowData.append('weather_api_key', document.getElementById('weather_api_key').value);
+            slideshowData.append('upload_method', 'folder');
+            slideshowData.append('total_files', selectedFiles.length);
+            
+            const createResponse = await fetch('/create_folder_slideshow', {
+                method: 'POST',
+                body: slideshowData
+            });
+            
+            if (!createResponse.ok) {
+                throw new Error('Failed to create slideshow');
+            }
+            
+            const result = await createResponse.json();
+            const slideshowId = result.slideshow_id;
+            
+            // Upload files in batches
+            const batchSize = 20;
+            let uploadedCount = 0;
+            
+            for (let i = 0; i < selectedFiles.length; i += batchSize) {
+                const batch = selectedFiles.slice(i, i + batchSize);
+                const batchData = new FormData();
+                batchData.append('slideshow_id', slideshowId);
+                batchData.append('batch_index', Math.floor(i / batchSize));
+                
+                batch.forEach((file, index) => {
+                    batchData.append(`files[]`, file);
+                    batchData.append(`file_paths[]`, file.webkitRelativePath || file.name);
+                });
+                
+                progressText.textContent = `Uploading batch ${Math.floor(i / batchSize) + 1}...`;
+                currentFile.textContent = `Files ${i + 1}-${Math.min(i + batchSize, selectedFiles.length)} of ${selectedFiles.length}`;
+                
+                const uploadResponse = await fetch('/upload_batch', {
+                    method: 'POST',
+                    body: batchData
+                });
+                
+                if (!uploadResponse.ok) {
+                    throw new Error(`Failed to upload batch ${Math.floor(i / batchSize) + 1}`);
+                }
+                
+                uploadedCount += batch.length;
+                const percent = (uploadedCount / selectedFiles.length) * 100;
+                progressBar.style.width = percent + '%';
+                progressStats.textContent = `${uploadedCount}/${selectedFiles.length} files`;
+            }
+            
+            // Finalize slideshow
+            progressText.textContent = 'Processing images...';
+            currentFile.textContent = 'Generating slideshow...';
+            
+            const finalizeResponse = await fetch('/finalize_slideshow', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({slideshow_id: slideshowId})
+            });
+            
+            if (!finalizeResponse.ok) {
+                throw new Error('Failed to finalize slideshow');
+            }
+            
+            progressText.textContent = 'Complete! Redirecting...';
+            window.location.href = `/slideshow/${slideshowId}`;
+            
+        } catch (error) {
+            alert(`Upload failed: ${error.message}`);
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-plus"></i> Create Slideshow';
+            progressContainer.style.display = 'none';
+        }
+    }
+
+    function uploadZipFile() {
         const formData = new FormData(form);
         
-        // Show progress
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
         progressContainer.style.display = 'block';
         
         const xhr = new XMLHttpRequest();
-        
-        // Set a very long timeout - 10 minutes
         xhr.timeout = 10 * 60 * 1000;
         
-        // Upload progress
         xhr.upload.addEventListener('progress', function(e) {
             if (e.lengthComputable) {
                 const percentComplete = (e.loaded / e.total) * 100;
@@ -243,7 +482,6 @@ document.addEventListener('DOMContentLoaded', function() {
         xhr.onload = function() {
             if (xhr.status === 200) {
                 progressText.textContent = 'Upload complete! Redirecting...';
-                // Redirect will be handled by the server response
                 window.location.href = xhr.responseURL || '{{ url_for("admin_dashboard") }}';
             } else {
                 alert(`Upload failed (${xhr.status}). Please try again.`);
@@ -254,7 +492,7 @@ document.addEventListener('DOMContentLoaded', function() {
         };
         
         xhr.ontimeout = function() {
-            alert('Upload timed out after 10 minutes. Please try with a smaller file.');
+            alert('Upload timed out. Please try again.');
             submitBtn.disabled = false;
             submitBtn.innerHTML = '<i class="fas fa-plus"></i> Create Slideshow';
             progressContainer.style.display = 'none';
@@ -269,7 +507,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         xhr.open('POST', form.action);
         xhr.send(formData);
-    });
+    }
 });
 </script>
 {% endblock %}
