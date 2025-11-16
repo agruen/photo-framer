@@ -6,7 +6,7 @@ Face-aware photo cropper that crops images to 1280x800 while ensuring faces are 
 import os
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
 import argparse
 import sys
 from pathlib import Path
@@ -429,78 +429,108 @@ class FaceAwareCropper:
         return enhanced
     
     def crop_image(self, input_path, output_path, target_width=1280, target_height=800, verbose=True):
-        """Crop a single image with face detection."""
+        """Crop a single image with face detection and handle aspect ratio differences."""
         try:
-            # Load image with OpenCV for face detection
-            cv_image = cv2.imread(input_path)
-            if cv_image is None:
+            # Load image with PIL
+            pil_image = Image.open(input_path).convert('RGB')
+            
+            original_width, original_height = pil_image.size
+            target_ratio = target_width / target_height
+            original_ratio = original_width / original_height
+
+            # --- Portrait on Landscape Special Handling ---
+            if original_ratio < target_ratio and original_height > original_width:
                 if verbose:
-                    print(f"Error: Could not load image {input_path}")
-                return False
-            
-            height, width = cv_image.shape[:2]
-            if verbose:
-                print(f"Processing {input_path}: {width}x{height}")
-            
-            # Detect faces
-            faces = self.detect_faces(cv_image)
-            if verbose:
-                print(f"Detected {len(faces)} face(s)")
+                    print(f"Applying portrait-on-landscape background for {input_path}")
 
-            # Calculate smart crop
-            crop_rect = self.calculate_smart_crop(width, height, faces, target_width, target_height)
+                # 1. Create blurred, darkened background
+                # Scale background to cover target dimensions
+                bg_width, bg_height = (target_width, int(target_width / original_ratio))
+                background_image = pil_image.resize((bg_width, bg_height), Image.Resampling.LANCZOS)
+                
+                # Heavy blur and darken
+                background_image = background_image.filter(ImageFilter.GaussianBlur(radius=20))
+                enhancer = ImageEnhance.Brightness(background_image)
+                background_image = enhancer.enhance(0.6) # Darken to 60% brightness
 
-            # VALIDATION: Ensure all faces are safely in crop
-            if faces and not self.validate_faces_in_crop(faces, crop_rect):
+                # Center crop the background to the exact target size
+                left = (background_image.width - target_width) / 2
+                top = (background_image.height - target_height) / 2
+                right = (background_image.width + target_width) / 2
+                bottom = (background_image.height + target_height) / 2
+                background_image = background_image.crop((left, top, right, bottom))
+
+                # 2. Resize original image to fit vertically
+                new_height = target_height
+                new_width = int(new_height * original_ratio)
+                
+                # Ensure it doesn't exceed target width (it shouldn't in this logic path)
+                if new_width > target_width:
+                    new_width = target_width
+                    new_height = int(new_width / original_ratio)
+
+                foreground_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+                # 3. Paste foreground onto background
+                paste_x = (target_width - new_width) // 2
+                paste_y = (target_height - new_height) // 2
+                
+                final_image = background_image.copy()
+                final_image.paste(foreground_image, (paste_x, paste_y))
+
+            else: # --- Standard Landscape or Square Image Processing ---
+                # Load with OpenCV for face detection
+                cv_image = cv2.imread(input_path)
+                if cv_image is None:
+                    if verbose:
+                        print(f"Error: Could not load image {input_path}")
+                    return False
+                
+                height, width = cv_image.shape[:2]
                 if verbose:
-                    print("Warning: Initial crop would cut faces. Recalculating with safety priority...")
-                # Force a safer crop that guarantees all faces
-                face_bbox = self.calculate_face_bounding_box(faces)
-                face_center_x = (face_bbox[0] + face_bbox[2]) / 2
-                face_center_y = (face_bbox[1] + face_bbox[3]) / 2
-                face_width = face_bbox[2] - face_bbox[0]
-                face_height = face_bbox[3] - face_bbox[1]
-
-                # Use maximum padding to guarantee safety
-                safety_padding = max(face_width, face_height) * 0.60  # 60% padding for safety
-
-                # Calculate safe crop dimensions
-                target_ratio = target_width / target_height
-                safe_width = (face_width + 2 * safety_padding)
-                safe_height = safe_width / target_ratio
-
-                if safe_height < (face_height + 2 * safety_padding):
-                    safe_height = (face_height + 2 * safety_padding)
-                    safe_width = safe_height * target_ratio
-
-                # Center on faces
-                safe_x = face_center_x - safe_width / 2
-                safe_y = face_center_y - safe_height / 2
-
-                # Bounds check
-                safe_x = max(0, min(safe_x, width - safe_width))
-                safe_y = max(0, min(safe_y, height - safe_height))
-
-                crop_rect = (int(safe_x), int(safe_y), int(safe_x + safe_width), int(safe_y + safe_height))
-
+                    print(f"Processing {input_path}: {width}x{height}")
+                
+                # Detect faces
+                faces = self.detect_faces(cv_image)
                 if verbose:
-                    print(f"Applied safety crop: {crop_rect}")
+                    print(f"Detected {len(faces)} face(s)")
+
+                # Calculate smart crop
+                crop_rect = self.calculate_smart_crop(width, height, faces, target_width, target_height)
+
+                # VALIDATION
+                if faces and not self.validate_faces_in_crop(faces, crop_rect):
+                    if verbose:
+                        print("Warning: Initial crop would cut faces. Recalculating with safety priority...")
+                    face_bbox = self.calculate_face_bounding_box(faces)
+                    face_center_x = (face_bbox[0] + face_bbox[2]) / 2
+                    face_center_y = (face_bbox[1] + face_bbox[3]) / 2
+                    face_width = face_bbox[2] - face_bbox[0]
+                    face_height = face_bbox[3] - face_bbox[1]
+                    safety_padding = max(face_width, face_height) * 0.60
+                    safe_width = (face_width + 2 * safety_padding)
+                    safe_height = safe_width / target_ratio
+                    if safe_height < (face_height + 2 * safety_padding):
+                        safe_height = (face_height + 2 * safety_padding)
+                        safe_width = safe_height * target_ratio
+                    safe_x = max(0, min(face_center_x - safe_width / 2, width - safe_width))
+                    safe_y = max(0, min(face_center_y - safe_height / 2, height - safe_height))
+                    crop_rect = (int(safe_x), int(safe_y), int(safe_x + safe_width), int(safe_y + safe_height))
+                    if verbose:
+                        print(f"Applied safety crop: {crop_rect}")
+                
+                # Crop the image
+                cropped = pil_image.crop(crop_rect)
+                
+                # Resize to exact target dimensions
+                final_image = cropped.resize((target_width, target_height), Image.Resampling.LANCZOS)
             
-            # Load with PIL for better image handling and cropping
-            pil_image = Image.open(input_path)
+            # Apply adaptive enhancement
+            final_image = self._enhance_image_quality(final_image, final_image.size, (target_width, target_height))
             
-            # Crop the image
-            cropped = pil_image.crop(crop_rect)
-            
-            # Resize to exact target dimensions with high-quality resampling
-            final_image = cropped.resize((target_width, target_height), Image.Resampling.LANCZOS)
-            
-            # Apply adaptive enhancement if needed
-            final_image = self._enhance_image_quality(final_image, cropped.size, (target_width, target_height))
-            
-            # Save the result with optimal quality settings
+            # Save the result
             save_kwargs = {'quality': 95}
-            if output_path.lower().endswith('.jpg') or output_path.lower().endswith('.jpeg'):
+            if output_path.lower().endswith(('.jpg', '.jpeg')):
                 save_kwargs.update({'optimize': True, 'progressive': True})
             
             final_image.save(output_path, **save_kwargs)
