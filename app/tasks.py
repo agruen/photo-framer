@@ -500,12 +500,208 @@ def process_folder_slideshow(self, slideshow_id):
             
         except Exception as e:
             logger.error(f"Error processing folder slideshow {slideshow_id}: {str(e)}")
-            
+
             # Update slideshow status to error
             slideshow.status = 'error'
             slideshow.error_message = str(e)
             db.session.commit()
-            
+
             emit_progress_update(slideshow_id, 'error', slideshow.progress, f'Error: {str(e)}')
-            
+
+            return {'error': str(e), 'slideshow_id': slideshow_id}
+
+
+@celery.task(bind=True, base=DatabaseTask)
+def add_photos_to_slideshow(self, slideshow_id):
+    """
+    Background task to add new photos to an existing slideshow.
+
+    Steps:
+    1. Scan existing slideshow folder for processed images
+    2. Process new images with face-aware cropping (numbered sequentially after existing)
+    3. Regenerate slideshow HTML with all images
+    4. Update database with new totals
+    """
+
+    logger.info(f"Starting to add photos to slideshow_id: {slideshow_id}")
+
+    with self.db_session.app_context():
+        # Get slideshow from database
+        slideshow = Slideshow.query.get(slideshow_id)
+        if not slideshow:
+            logger.error(f"Slideshow {slideshow_id} not found")
+            return {'error': 'Slideshow not found'}
+
+        try:
+            # Update status to processing
+            slideshow.status = 'processing'
+            slideshow.progress = 0
+            db.session.commit()
+
+            # Emit progress update via WebSocket (if available)
+            emit_progress_update(slideshow_id, 'processing', 0, 'Starting to add photos...')
+
+            # Define paths
+            slideshow_path = os.path.join(Config.SLIDESHOW_FOLDER, slideshow.folder_name)
+
+            if not os.path.exists(slideshow_path):
+                raise ValueError(f"Slideshow folder not found: {slideshow_path}")
+
+            # Step 1: Find existing processed images to determine starting index
+            logger.info(f"Scanning for existing processed images: {slideshow_path}")
+            emit_progress_update(slideshow_id, 'processing', 5, 'Scanning existing images...')
+
+            existing_processed = []
+            new_unprocessed = []
+
+            for file in os.listdir(slideshow_path):
+                if file.startswith('processed_') and not file.endswith('.html'):
+                    existing_processed.append(file)
+                elif file != 'slideshow.html':
+                    # Check if it's an image file that needs processing
+                    supported_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp'}
+                    if any(file.lower().endswith(ext) for ext in supported_extensions):
+                        new_unprocessed.append(os.path.join(slideshow_path, file))
+
+            # Determine starting index
+            start_index = len(existing_processed) + 1
+            logger.info(f"Found {len(existing_processed)} existing processed images, starting at index {start_index}")
+            logger.info(f"Found {len(new_unprocessed)} new images to process")
+
+            if len(new_unprocessed) == 0:
+                raise ValueError("No new images found to add")
+
+            # Update total image count
+            slideshow.total_images = len(existing_processed) + len(new_unprocessed)
+            db.session.commit()
+
+            emit_progress_update(slideshow_id, 'processing', 15, f'Found {len(new_unprocessed)} new images to add')
+
+            # Step 2: Process new images with face-aware cropping
+            logger.info(f"Processing {len(new_unprocessed)} new images with face detection")
+            emit_progress_update(slideshow_id, 'processing', 20, 'Starting image processing...')
+
+            cropper = FaceAwareCropper()
+            newly_processed = []
+
+            for i, image_file in enumerate(new_unprocessed):
+                try:
+                    # Calculate progress
+                    progress = 20 + int((i / len(new_unprocessed)) * 60)  # 20% to 80%
+
+                    # Generate output filename with sequential numbering
+                    input_filename = os.path.basename(image_file)
+                    name, ext = os.path.splitext(input_filename)
+                    output_filename = f"processed_{start_index + i:04d}_{name}{ext}"
+                    output_file_path = os.path.join(slideshow_path, output_filename)
+
+                    # Emit progress update for current image being processed
+                    emit_progress_update(
+                        slideshow_id, 'processing', progress,
+                        f'Processing image {i+1}/{len(new_unprocessed)}: {input_filename}',
+                        total_images=slideshow.total_images,
+                        processed_images=len(existing_processed) + len(newly_processed),
+                        current_image=input_filename
+                    )
+
+                    # Process single image with face detection
+                    success = cropper.crop_image(
+                        image_file,
+                        output_file_path,
+                        slideshow.screen_width,
+                        slideshow.screen_height,
+                        verbose=False
+                    )
+
+                    if success:
+                        newly_processed.append(output_filename)
+                        logger.info(f"Successfully processed image {i+1}/{len(new_unprocessed)}: {input_filename}")
+
+                        # Remove original file to save space
+                        if os.path.exists(image_file):
+                            os.remove(image_file)
+                    else:
+                        logger.warning(f"Failed to process image: {input_filename}")
+
+                    # Update progress
+                    slideshow.progress = progress
+                    slideshow.processed_images = len(existing_processed) + len(newly_processed)
+                    db.session.commit()
+
+                    # Emit completion update for this image
+                    status_msg = "✓ Processed" if success else "⚠ Skipped"
+                    emit_progress_update(
+                        slideshow_id, 'processing', progress,
+                        f'{status_msg} {i+1}/{len(new_unprocessed)}: {input_filename}',
+                        total_images=slideshow.total_images,
+                        processed_images=slideshow.processed_images,
+                        current_image=input_filename
+                    )
+
+                except Exception as e:
+                    logger.error(f"Error processing image {image_file}: {str(e)}")
+                    # Emit error update for this image
+                    emit_progress_update(
+                        slideshow_id, 'processing', progress,
+                        f'❌ Error processing {input_filename}: {str(e)[:50]}...',
+                        total_images=slideshow.total_images,
+                        processed_images=slideshow.processed_images,
+                        current_image=input_filename
+                    )
+                    continue
+
+            if len(newly_processed) == 0:
+                raise ValueError("No new images were successfully processed")
+
+            logger.info(f"Successfully processed {len(newly_processed)} new images")
+            emit_progress_update(slideshow_id, 'processing', 80, f'Processed {len(newly_processed)} new images')
+
+            # Step 3: Regenerate slideshow HTML with all images
+            logger.info("Regenerating slideshow HTML with all images")
+            emit_progress_update(slideshow_id, 'processing', 85, 'Regenerating slideshow...')
+
+            # Get all processed images (existing + new)
+            all_processed = sorted(existing_processed + newly_processed)
+
+            html_path = generate_slideshow_html(
+                processed_images=all_processed,
+                output_dir=slideshow_path,
+                zip_code=slideshow.weather_zip or "10001",
+                api_key=slideshow.weather_api_key or "YOUR_API_KEY_HERE",
+                screen_width=slideshow.screen_width,
+                screen_height=slideshow.screen_height
+            )
+
+            logger.info(f"Regenerated slideshow HTML: {html_path}")
+            emit_progress_update(slideshow_id, 'processing', 90, 'Slideshow regenerated')
+
+            # Step 4: Update database with final counts
+            slideshow.status = 'completed'
+            slideshow.progress = 100
+            slideshow.total_images = len(all_processed)
+            slideshow.processed_images = len(all_processed)
+            db.session.commit()
+
+            emit_progress_update(slideshow_id, 'completed', 100, f'Successfully added {len(newly_processed)} photos!')
+
+            logger.info(f"Successfully added {len(newly_processed)} photos to slideshow_id: {slideshow_id}")
+
+            return {
+                'slideshow_id': slideshow_id,
+                'status': 'completed',
+                'newly_processed_images': len(newly_processed),
+                'total_images': len(all_processed),
+                'html_path': html_path
+            }
+
+        except Exception as e:
+            logger.error(f"Error adding photos to slideshow {slideshow_id}: {str(e)}")
+
+            # Update slideshow status to error
+            slideshow.status = 'error'
+            slideshow.error_message = str(e)
+            db.session.commit()
+
+            emit_progress_update(slideshow_id, 'error', slideshow.progress, f'Error: {str(e)}')
+
             return {'error': str(e), 'slideshow_id': slideshow_id}

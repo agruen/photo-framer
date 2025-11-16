@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block title %}Add Photos - {{ slideshow.name }} - Photo Frame Admin{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <h1><i class="fas fa-plus-circle"></i> Add Photos to Slideshow</h1>
+        <p class="text-muted">Add more photos to "<strong>{{ slideshow.name }}</strong>"</p>
+
+        <!-- Slideshow Info -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5><i class="fas fa-info-circle"></i> Slideshow Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p class="mb-1"><strong>Name:</strong> {{ slideshow.name }}</p>
+                        <p class="mb-1"><strong>Current photos:</strong> {{ slideshow.processed_images }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p class="mb-1"><strong>Screen resolution:</strong> {{ slideshow.screen_width }}×{{ slideshow.screen_height }}</p>
+                        <p class="mb-1"><strong>Rotation interval:</strong> {{ slideshow.rotation_interval }}s</p>
+                    </div>
+                </div>
+                <div class="alert alert-info mt-3 mb-0">
+                    <i class="fas fa-lightbulb"></i> New photos will be processed with the same settings and added to your slideshow.
+                </div>
+            </div>
+        </div>
+
+        <form id="addPhotosForm">
+            <!-- File Upload -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-upload"></i> Photo Upload</h5>
+                </div>
+                <div class="card-body">
+                    <!-- Upload Area -->
+                    <div class="upload-area" id="uploadArea">
+                        <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                        <h4>Drop photos here or select files/folder</h4>
+                        <p class="text-muted">
+                            Select photos or a folder containing your photos (JPG, PNG, BMP, TIFF, WEBP)<br>
+                            Supports hundreds or thousands of images
+                        </p>
+                        <input type="file" id="photo_files" name="photo_files"
+                               webkitdirectory multiple accept="image/*" style="display: none;">
+                        <input type="file" id="individual_files" name="individual_files"
+                               multiple accept="image/*" style="display: none;">
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-primary" onclick="document.getElementById('photo_files').click()">
+                                <i class="fas fa-folder-open"></i> Select Folder
+                            </button>
+                            <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('individual_files').click()">
+                                <i class="fas fa-images"></i> Select Files
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- File Info -->
+                    <div id="fileInfo" style="display: none;" class="mt-3">
+                        <div class="alert alert-info">
+                            <strong>Images selected:</strong> <span id="imageCount"></span><br>
+                            <strong>Total size:</strong> <span id="totalSize"></span>
+                        </div>
+                        <div class="file-list-container" style="max-height: 200px; overflow-y: auto;">
+                            <ul id="fileList" class="list-unstyled small text-muted"></ul>
+                        </div>
+                    </div>
+
+                    <!-- Upload Progress -->
+                    <div class="progress-container" style="display: none;">
+                        <div class="mb-2">
+                            <small class="text-muted" id="progressText">Preparing upload...</small>
+                            <small class="text-muted float-end" id="progressStats"></small>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <div class="mt-2">
+                            <small class="text-muted" id="currentFile"></small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Submit Button -->
+            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                <a href="{{ url_for('slideshow_detail', slideshow_id=slideshow.id) }}" class="btn btn-secondary me-md-2">
+                    <i class="fas fa-arrow-left"></i> Cancel
+                </a>
+                <button type="submit" class="btn btn-success" id="submitBtn">
+                    <i class="fas fa-plus"></i> Add Photos
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const uploadArea = document.getElementById('uploadArea');
+    const photoInput = document.getElementById('photo_files');
+    const individualInput = document.getElementById('individual_files');
+    const fileInfo = document.getElementById('fileInfo');
+    const form = document.getElementById('addPhotosForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const progressContainer = document.querySelector('.progress-container');
+    const progressBar = document.querySelector('.progress-bar');
+    const progressText = document.getElementById('progressText');
+    const progressStats = document.getElementById('progressStats');
+    const currentFile = document.getElementById('currentFile');
+
+    let selectedFiles = [];
+    const slideshowId = {{ slideshow.id }};
+
+    // Drag and drop functionality
+    uploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+
+        const files = Array.from(e.dataTransfer.files);
+        const imageFiles = files.filter(file => file.type.startsWith('image/'));
+
+        if (imageFiles.length > 0) {
+            selectedFiles = imageFiles;
+            showFileInfo(imageFiles);
+        } else {
+            alert('Please select image files');
+        }
+    });
+
+    // Folder selection
+    photoInput.addEventListener('change', function(e) {
+        const files = Array.from(e.target.files);
+        const imageFiles = files.filter(file => file.type.startsWith('image/'));
+
+        if (imageFiles.length > 0) {
+            selectedFiles = imageFiles;
+            showFileInfo(imageFiles);
+        }
+    });
+
+    // Individual file selection
+    individualInput.addEventListener('change', function(e) {
+        const files = Array.from(e.target.files);
+        const imageFiles = files.filter(file => file.type.startsWith('image/'));
+
+        if (imageFiles.length > 0) {
+            selectedFiles = imageFiles;
+            showFileInfo(imageFiles);
+        }
+    });
+
+    function showFileInfo(files) {
+        const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+
+        document.getElementById('imageCount').textContent = files.length;
+        document.getElementById('totalSize').textContent = formatFileSize(totalSize);
+
+        // Show file list (limited to first 10 for display)
+        const fileList = document.getElementById('fileList');
+        fileList.innerHTML = '';
+        files.slice(0, 10).forEach(file => {
+            const li = document.createElement('li');
+            li.textContent = `${file.name} (${formatFileSize(file.size)})`;
+            fileList.appendChild(li);
+        });
+
+        if (files.length > 10) {
+            const li = document.createElement('li');
+            li.textContent = `... and ${files.length - 10} more files`;
+            li.style.fontStyle = 'italic';
+            fileList.appendChild(li);
+        }
+
+        fileInfo.style.display = 'block';
+    }
+
+    // Form submission with progress
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        if (selectedFiles.length === 0) {
+            alert('Please select photos to add');
+            return;
+        }
+
+        uploadFiles();
+    });
+
+    async function uploadFiles() {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+        progressContainer.style.display = 'block';
+
+        try {
+            // Upload files in batches
+            const batchSize = 20;
+            let uploadedCount = 0;
+
+            for (let i = 0; i < selectedFiles.length; i += batchSize) {
+                const batch = selectedFiles.slice(i, i + batchSize);
+                const batchData = new FormData();
+                batchData.append('slideshow_id', slideshowId);
+                batchData.append('batch_index', Math.floor(i / batchSize));
+
+                batch.forEach((file, index) => {
+                    batchData.append(`files[]`, file);
+                    batchData.append(`file_paths[]`, file.webkitRelativePath || file.name);
+                });
+
+                progressText.textContent = `Uploading batch ${Math.floor(i / batchSize) + 1}...`;
+                currentFile.textContent = `Files ${i + 1}-${Math.min(i + batchSize, selectedFiles.length)} of ${selectedFiles.length}`;
+
+                const uploadResponse = await fetch('/slideshow/{{ slideshow.id }}/upload_batch_addition', {
+                    method: 'POST',
+                    body: batchData
+                });
+
+                if (!uploadResponse.ok) {
+                    throw new Error(`Failed to upload batch ${Math.floor(i / batchSize) + 1}`);
+                }
+
+                uploadedCount += batch.length;
+                const percent = (uploadedCount / selectedFiles.length) * 100;
+                progressBar.style.width = percent + '%';
+                progressStats.textContent = `${uploadedCount}/${selectedFiles.length} files`;
+            }
+
+            // Finalize addition
+            progressText.textContent = 'Processing images...';
+            currentFile.textContent = 'Adding photos to slideshow...';
+
+            const finalizeResponse = await fetch('/slideshow/{{ slideshow.id }}/finalize_addition', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            });
+
+            if (!finalizeResponse.ok) {
+                throw new Error('Failed to finalize photo addition');
+            }
+
+            progressText.textContent = 'Complete! Redirecting...';
+            window.location.href = '/slideshow/{{ slideshow.id }}';
+
+        } catch (error) {
+            alert(`Upload failed: ${error.message}`);
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-plus"></i> Add Photos';
+            progressContainer.style.display = 'none';
+        }
+    }
+});
+</script>
+{% endblock %}

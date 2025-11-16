@@ -355,18 +355,171 @@ def create_app(config_class=Config):
     def delete_slideshow(slideshow_id):
         """Delete a slideshow and its files"""
         slideshow = Slideshow.query.get_or_404(slideshow_id)
-        
+
         # Start background deletion task
         from .tasks import delete_slideshow_files
         delete_slideshow_files.delay(slideshow_id)
-        
+
         # Delete database records
         db.session.delete(slideshow)
         db.session.commit()
-        
+
         flash(f'Slideshow "{slideshow.name}" deleted!', 'success')
         return redirect(url_for('admin_dashboard'))
-    
+
+    @app.route('/slideshow/<int:slideshow_id>/add_photos', methods=['GET'])
+    @admin_required
+    def add_photos(slideshow_id):
+        """Page to add more photos to an existing slideshow"""
+        slideshow = Slideshow.query.get_or_404(slideshow_id)
+
+        if slideshow.status != 'completed':
+            flash('Can only add photos to completed slideshows', 'error')
+            return redirect(url_for('slideshow_detail', slideshow_id=slideshow_id))
+
+        return render_template('add_photos.html', slideshow=slideshow)
+
+    @app.route('/slideshow/<int:slideshow_id>/upload_batch_addition', methods=['POST'])
+    @admin_required
+    def upload_batch_addition(slideshow_id):
+        """Handle batch file uploads for adding photos to existing slideshow"""
+        try:
+            batch_index = request.form.get('batch_index')
+
+            slideshow = Slideshow.query.get_or_404(slideshow_id)
+
+            # Only allow adding photos to completed slideshows
+            if slideshow.status not in ['completed', 'uploading']:
+                return jsonify({'error': 'Can only add photos to completed slideshows'}), 400
+
+            # Update status to uploading if it was completed
+            if slideshow.status == 'completed':
+                slideshow.status = 'uploading'
+                db.session.commit()
+
+            slideshow_dir = os.path.join(app.config['SLIDESHOW_FOLDER'], slideshow.folder_name)
+
+            # Process uploaded files
+            files = request.files.getlist('files[]')
+            file_paths = request.form.getlist('file_paths[]')
+
+            if not files or len(files) == 0:
+                return jsonify({'error': 'No files in batch'}), 400
+
+            saved_files = []
+            for i, file in enumerate(files):
+                if file and file.filename:
+                    # Get original filename
+                    original_filename = file_paths[i] if i < len(file_paths) else file.filename
+
+                    # Save file with original name (will be processed and renamed later)
+                    safe_filename = secure_filename(os.path.basename(original_filename))
+                    file_path = os.path.join(slideshow_dir, safe_filename)
+
+                    # If file already exists, add a timestamp to avoid overwriting
+                    if os.path.exists(file_path):
+                        name, ext = os.path.splitext(safe_filename)
+                        safe_filename = f"{name}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}{ext}"
+                        file_path = os.path.join(slideshow_dir, safe_filename)
+
+                    file.save(file_path)
+                    saved_files.append(original_filename)
+
+            return jsonify({
+                'success': True,
+                'batch_index': batch_index,
+                'files_saved': len(saved_files),
+                'files': saved_files
+            })
+
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/slideshow/<int:slideshow_id>/finalize_addition', methods=['POST'])
+    @admin_required
+    def finalize_addition(slideshow_id):
+        """Finalize photo addition after all files are uploaded"""
+        try:
+            slideshow = Slideshow.query.get_or_404(slideshow_id)
+
+            if slideshow.status != 'uploading':
+                return jsonify({'error': 'Slideshow not in upload state'}), 400
+
+            # Update status to processing
+            slideshow.status = 'processing'
+            db.session.commit()
+
+            # Start background processing to add photos
+            from .tasks import add_photos_to_slideshow
+            task = add_photos_to_slideshow.delay(slideshow.id)
+
+            # Record processing task
+            processing_task = ProcessingTask(
+                slideshow_id=slideshow.id,
+                task_id=task.id,
+                task_type='add_photos'
+            )
+            db.session.add(processing_task)
+            db.session.commit()
+
+            return jsonify({'success': True, 'task_id': task.id})
+
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/slideshow/<int:slideshow_id>/download')
+    @admin_required
+    def download_slideshow(slideshow_id):
+        """Download slideshow as ZIP file for local use"""
+        slideshow = Slideshow.query.get_or_404(slideshow_id)
+
+        if slideshow.status != 'completed':
+            flash('Can only download completed slideshows', 'error')
+            return redirect(url_for('slideshow_detail', slideshow_id=slideshow_id))
+
+        import zipfile
+        import tempfile
+        from io import BytesIO
+
+        try:
+            # Create a BytesIO object to store the ZIP in memory
+            memory_file = BytesIO()
+
+            # Get slideshow folder path
+            slideshow_folder = os.path.join(app.config['SLIDESHOW_FOLDER'], slideshow.folder_name)
+
+            if not os.path.exists(slideshow_folder):
+                flash('Slideshow folder not found', 'error')
+                return redirect(url_for('slideshow_detail', slideshow_id=slideshow_id))
+
+            # Create ZIP file
+            with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                # Walk through the slideshow folder
+                for root, dirs, files in os.walk(slideshow_folder):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        # Add file to ZIP with relative path
+                        arcname = os.path.relpath(file_path, slideshow_folder)
+                        zipf.write(file_path, arcname)
+
+            # Seek to the beginning of the BytesIO object
+            memory_file.seek(0)
+
+            # Generate safe filename
+            safe_name = "".join(c for c in slideshow.name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            filename = f"{safe_name}_slideshow.zip"
+
+            return send_file(
+                memory_file,
+                mimetype='application/zip',
+                as_attachment=True,
+                download_name=filename
+            )
+
+        except Exception as e:
+            flash(f'Error creating download: {str(e)}', 'error')
+            return redirect(url_for('slideshow_detail', slideshow_id=slideshow_id))
+
     @app.route('/s/<url_key>')
     def view_slideshow(url_key):
         """Public slideshow viewing endpoint"""
