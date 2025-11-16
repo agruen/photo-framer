@@ -262,10 +262,19 @@ class FaceAwareCropper:
 
         return True
     
-    def _calculate_portrait_crop(self, image_width, image_height, faces, target_ratio):
+    def calculate_smart_crop(self, image_width, image_height, faces, target_width=1280, target_height=800):
+        """Calculate the best crop rectangle with advanced composition and face preservation."""
+        target_ratio = target_width / target_height
+
+        if faces:
+            return self._calculate_face_aware_crop(image_width, image_height, faces, target_ratio)
+        else:
+            # Fallback for images without faces
+            return self._calculate_content_aware_crop(image_width, image_height, target_width, target_height)
+
+    def _calculate_face_aware_crop(self, image_width, image_height, faces, target_ratio):
         """
-        Calculates a crop for portrait-style images, prioritizing headroom and composition.
-        This method is designed for images that are taller than they are wide.
+        Calculates a crop that contains all faces, is centered, and has a bit of padding.
         """
         face_bbox = self.calculate_face_bounding_box(faces)
         face_width = face_bbox[2] - face_bbox[0]
@@ -273,114 +282,38 @@ class FaceAwareCropper:
         face_center_x = face_bbox[0] + face_width / 2
         face_center_y = face_bbox[1] + face_height / 2
 
-        # Give more headroom to avoid cutting off the top of the head
-        headroom = face_height * 1.5
-        
-        # Show more of the body
-        body_room = face_height * 1.0
+        # Add padding to the face bounding box. This is the key to not cropping too tightly.
+        # We'll add 40% padding on each side (horizontally) and 60% vertically.
+        padded_width = face_width * 1.8
+        padded_height = face_height * 2.2
 
-        # Calculate the total height required for the crop
-        required_height = face_height + headroom + body_room
-        
-        # Calculate the corresponding width based on the target aspect ratio
-        required_width = required_height * target_ratio
+        # Determine the crop dimensions based on the target aspect ratio.
+        # The crop must be large enough to contain the padded face box.
+        if padded_width / padded_height > target_ratio:
+            # The padded area is wider than the target ratio, so width is the limiting dimension.
+            crop_width = padded_width
+            crop_height = crop_width / target_ratio
+        else:
+            # The padded area is taller than the target ratio, so height is the limiting dimension.
+            crop_height = padded_height
+            crop_width = crop_height * target_ratio
 
-        # If the required width is wider than the image, we have to scale down
-        if required_width > image_width:
-            required_width = image_width
-            required_height = required_width / target_ratio
-            # Recalculate headroom and body_room to maintain vertical centering
-            headroom = (required_height - face_height) / 2
-            body_room = headroom
+        # Center the crop box on the center of the face bounding box.
+        crop_x = face_center_x - crop_width / 2
+        crop_y = face_center_y - crop_height / 2
 
-        # Center the crop horizontally on the face
-        crop_x = face_center_x - required_width / 2
-        
-        # Center the face vertically in the crop
-        crop_y = face_center_y - (required_height / 2)
-
-        # Boundary checks to ensure the crop is within the image
+        # Ensure the crop box does not go outside the image boundaries.
+        # If it does, we shift it. This is a crucial step.
         if crop_x < 0:
             crop_x = 0
         if crop_y < 0:
             crop_y = 0
-        if crop_x + required_width > image_width:
-            crop_x = image_width - required_width
-        if crop_y + required_height > image_height:
-            crop_y = image_height - required_height
-
-        return (int(crop_x), int(crop_y), int(crop_x + required_width), int(crop_y + required_height))
-
-    def calculate_smart_crop(self, image_width, image_height, faces, target_width=1280, target_height=800):
-        """Calculate the best crop rectangle with advanced composition and face preservation."""
-        target_ratio = target_width / target_height
-        image_ratio = image_width / image_height
-
-        # Decide which cropping strategy to use
-        if faces:
-            # Prioritize portrait-specific logic if the image is taller than wide
-            if image_ratio < 1.0: # Portrait-oriented image
-                return self._calculate_portrait_crop(image_width, image_height, faces, target_ratio)
-            else: # Landscape or square image
-                return self._calculate_face_aware_crop(image_width, image_height, faces, target_width, target_height)
-        else:
-            # Fallback for images without faces
-            return self._calculate_content_aware_crop(image_width, image_height, target_width, target_height)
-
-    def _calculate_face_aware_crop(self, image_width, image_height, faces, crop_width, crop_height):
-        """Calculate crop with guaranteed face preservation for landscape images."""
-        target_ratio = crop_width / crop_height
-        face_bbox = self.calculate_face_bounding_box(faces)
-        face_center_x = (face_bbox[0] + face_bbox[2]) / 2
-        face_center_y = (face_bbox[1] + face_bbox[3]) / 2
-        face_width = face_bbox[2] - face_bbox[0]
-        face_height = face_bbox[3] - face_bbox[1]
-
-        # Generous padding for landscape shots
-        padding_percent = 0.80 if len(faces) == 1 else 0.60
-        min_padding = max(face_width, face_height) * padding_percent
-
-        # Increased headroom for landscape shots
-        headroom = face_height * 1.2
-
-        # Define the required area to keep faces safe
-        required_left = face_bbox[0] - min_padding
-        required_right = face_bbox[2] + min_padding
-        required_top = face_bbox[1] - headroom
-        required_bottom = face_bbox[3] + min_padding
-
-        min_crop_width = required_right - required_left
-        min_crop_height = required_bottom - required_top
-
-        # Determine the final crop dimensions
-        if min_crop_width / min_crop_height > target_ratio:
-            # Width is the limiting factor
-            final_crop_width = min_crop_width
-            final_crop_height = final_crop_width / target_ratio
-        else:
-            # Height is the limiting factor
-            final_crop_height = min_crop_height
-            final_crop_width = final_crop_height * target_ratio
-
-        # Center the crop on the face group
-        crop_x = face_center_x - final_crop_width / 2
-        crop_y = face_center_y - final_crop_height / 2
-
-        # Adjust crop to not go out of bounds
-        crop_x = max(0, min(crop_x, image_width - final_crop_width))
-        crop_y = max(0, min(crop_y, image_height - final_crop_height))
-        
-        # Final boundary checks to ensure the entire required zone is included
-        if crop_x > required_left:
-            crop_x = required_left
-        if crop_y > required_top:
-            crop_y = required_top
-        if crop_x + final_crop_width < required_right:
-            crop_x = image_width - final_crop_width
-        if crop_y + final_crop_height < required_bottom:
-            crop_y = image_height - final_crop_height
-
-        return (int(crop_x), int(crop_y), int(crop_x + final_crop_width), int(crop_y + final_crop_height))
+        if crop_x + crop_width > image_width:
+            crop_x = image_width - crop_width
+        if crop_y + crop_height > image_height:
+            crop_y = image_height - crop_height
+            
+        return (int(crop_x), int(crop_y), int(crop_x + crop_width), int(crop_y + crop_height))
     
     
     def _calculate_content_aware_crop(self, image_width, image_height, crop_width, crop_height):
