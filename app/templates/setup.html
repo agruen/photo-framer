@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup - Photo Frame Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .setup-container {
+            max-width: 600px;
+            width: 100%;
+            padding: 20px;
+        }
+        .setup-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .setup-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .setup-header h1 {
+            margin: 0;
+            font-size: 2rem;
+        }
+        .setup-header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+        }
+        .setup-body {
+            padding: 30px;
+        }
+        .form-label {
+            font-weight: 600;
+            color: #333;
+        }
+        .btn-setup {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            padding: 12px 30px;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .btn-setup:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        .password-strength {
+            height: 5px;
+            border-radius: 3px;
+            margin-top: 5px;
+            transition: all 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="setup-container">
+        <div class="setup-card">
+            <div class="setup-header">
+                <i class="fas fa-images fa-3x mb-3"></i>
+                <h1>Welcome to Photo Frame</h1>
+                <p>Let's set up your digital photo frame system</p>
+            </div>
+
+            <div class="setup-body">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                <form method="POST" id="setupForm">
+                    <!-- Admin Password -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-light">
+                            <h5 class="mb-0"><i class="fas fa-key"></i> Admin Credentials</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label for="admin_password" class="form-label">Admin Password *</label>
+                                <input type="password" class="form-control" id="admin_password"
+                                       name="admin_password" required minlength="8"
+                                       placeholder="Enter a secure password (min 8 characters)">
+                                <div class="password-strength" id="passwordStrength"></div>
+                                <div class="form-text">This password will be used to access the admin dashboard</div>
+                            </div>
+                            <div class="mb-0">
+                                <label for="admin_password_confirm" class="form-label">Confirm Password *</label>
+                                <input type="password" class="form-control" id="admin_password_confirm"
+                                       name="admin_password_confirm" required minlength="8"
+                                       placeholder="Re-enter your password">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Default Settings -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-light">
+                            <h5 class="mb-0"><i class="fas fa-cog"></i> Default Slideshow Settings</h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-3">These will be the default settings for new slideshows (you can change them per slideshow)</p>
+
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="screen_width" class="form-label">Screen Width (px)</label>
+                                    <input type="number" class="form-control" id="screen_width"
+                                           name="screen_width" value="1280" min="640" max="4096">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="screen_height" class="form-label">Screen Height (px)</label>
+                                    <input type="number" class="form-control" id="screen_height"
+                                           name="screen_height" value="800" min="480" max="2160">
+                                </div>
+                            </div>
+
+                            <div class="mb-0">
+                                <label for="rotation_interval" class="form-label">Image Rotation Interval (seconds)</label>
+                                <input type="number" class="form-control" id="rotation_interval"
+                                       name="rotation_interval" value="60" min="5" max="600">
+                                <div class="form-text">How often images change in the slideshow</div>
+                            </div>
+
+                            <hr>
+
+                            <div class="mb-0">
+                                <small class="text-muted">
+                                    <strong>Common screen resolutions:</strong><br>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="setResolution(1280, 800)">1280×800</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="setResolution(1920, 1080)">1920×1080 (Full HD)</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="setResolution(1024, 768)">1024×768</button>
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Submit -->
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-setup" id="submitBtn">
+                            <i class="fas fa-check-circle"></i> Complete Setup
+                        </button>
+                    </div>
+
+                    <div class="text-center mt-3">
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle"></i> You can change these settings later in the admin panel
+                        </small>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="text-center mt-3">
+            <small class="text-white">
+                Photo Frame Admin &copy; 2024
+            </small>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function setResolution(width, height) {
+            document.getElementById('screen_width').value = width;
+            document.getElementById('screen_height').value = height;
+        }
+
+        // Password strength indicator
+        const passwordInput = document.getElementById('admin_password');
+        const strengthBar = document.getElementById('passwordStrength');
+
+        passwordInput.addEventListener('input', function() {
+            const password = this.value;
+            let strength = 0;
+
+            if (password.length >= 8) strength += 25;
+            if (password.length >= 12) strength += 25;
+            if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength += 25;
+            if (/[0-9]/.test(password)) strength += 12.5;
+            if (/[^a-zA-Z0-9]/.test(password)) strength += 12.5;
+
+            strengthBar.style.width = strength + '%';
+
+            if (strength < 25) {
+                strengthBar.style.backgroundColor = '#dc3545';
+            } else if (strength < 50) {
+                strengthBar.style.backgroundColor = '#ffc107';
+            } else if (strength < 75) {
+                strengthBar.style.backgroundColor = '#17a2b8';
+            } else {
+                strengthBar.style.backgroundColor = '#28a745';
+            }
+        });
+
+        // Form validation
+        document.getElementById('setupForm').addEventListener('submit', function(e) {
+            const password = document.getElementById('admin_password').value;
+            const confirm = document.getElementById('admin_password_confirm').value;
+
+            if (password !== confirm) {
+                e.preventDefault();
+                alert('Passwords do not match!');
+                return false;
+            }
+
+            if (password.length < 8) {
+                e.preventDefault();
+                alert('Password must be at least 8 characters long!');
+                return false;
+            }
+
+            document.getElementById('submitBtn').disabled = true;
+            document.getElementById('submitBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Setting up...';
+        });
+    </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 services:
   web:
-    build: 
+    build:
       context: .
       network: host
     ports:
@@ -15,9 +15,10 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - DATABASE_URL=sqlite:////app/db/slideshows.db
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - SECRET_KEY=${SECRET_KEY}
-      - MAX_CONTENT_LENGTH=${MAX_CONTENT_LENGTH}
+      # Optional: Override settings from web setup (web setup takes priority if not set)
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - SECRET_KEY=${SECRET_KEY:-}
+      - MAX_CONTENT_LENGTH=${MAX_CONTENT_LENGTH:-10737418240}
     depends_on:
       - redis
     restart: unless-stopped

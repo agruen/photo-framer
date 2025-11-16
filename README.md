@@ -2,14 +2,16 @@
 
 A complete Python toolkit and web server for creating beautiful digital photo frame slideshows. Features intelligent face-aware cropping, weather integration, and a modern web admin interface for managing multiple slideshows.
 
-## ✨ New: Bulk Folder Upload Support
+## ✨ New Features
 
-🚀 **Major Update - Now supports uploading thousands of images:**
-- **Folder Upload**: Select entire photo folders directly (no ZIP required!)
-- **Batch Processing**: Handles hundreds or thousands of images efficiently
-- **Real-time Progress**: Watch individual file uploads with live progress bars
-- **Memory Optimized**: Processes files in small batches to avoid memory issues
-- **Maintains Structure**: Preserves your original folder organization
+🚀 **Latest Updates:**
+- **🎯 First-Time Setup Wizard**: No configuration files needed - set up everything via web interface
+- **📸 Add Photos to Slideshows**: Update existing slideshows with more photos
+- **💾 Download Slideshows**: Package entire slideshows for offline/local use
+- **📁 Folder Upload**: Select entire photo folders directly (no ZIP required!)
+- **⚡ Batch Processing**: Handles hundreds or thousands of images efficiently
+- **📊 Real-time Progress**: Watch individual file uploads with live progress bars
+- **🧠 Memory Optimized**: Processes files in small batches to avoid memory issues
 
 ## Complete Dockerized Solution
 
@@ -50,26 +52,35 @@ A complete Python toolkit and web server for creating beautiful digital photo fr
 
 ### 🖥️ Web Server Setup (Recommended)
 
-1. **Start the server:**
+**Simple 2-step setup - No configuration files needed!**
+
+1. **Clone and start:**
    ```bash
    git clone <your-repo>
    cd Photo-Framer
-   ./start-server.sh
+   docker compose up -d
    ```
 
-2. **Access admin interface:**
-   - Open http://localhost:5000 in your browser
-   - Login with password: `changeme123` (change this!)
-   - Click "Create New Slideshow"
+2. **Complete setup wizard:**
+   - Open http://localhost:8012 in your browser
+   - On first run, you'll see a setup wizard
+   - Set your admin password (min 8 characters)
+   - Configure default screen resolution
+   - Click "Complete Setup"
+   - Login and start creating slideshows!
 
-3. **Create slideshow:**
+3. **Create slideshows:**
    - **Option A**: Click "Select Folder" to upload entire photo folders (thousands of images!)
    - **Option B**: Drag and drop ZIP file with photos (legacy method)
    - Configure screen size and weather settings
    - Watch real-time batch processing with live progress bars
    - Generate secure URLs to share
+   - **NEW**: Add more photos to existing slideshows
+   - **NEW**: Download slideshows for offline use
 
 📖 **Full server documentation:** [README-SERVER.md](README-SERVER.md)
+
+**Note:** Settings are persisted in `./volumes/db/config.json`. To reset and run setup again, delete `./volumes/db/.setup_complete`.
 
 ---
 

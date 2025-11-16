@@ -22,27 +22,45 @@ celery = None
 def create_app(config_class=Config):
     """Flask application factory"""
     global socketio, celery
-    
+
     app = Flask(__name__)
     app.config.from_object(config_class)
-    
+
+    # Initialize config from setup
+    config_class.init_app(app)
+
     # Add reverse proxy support
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
-    
+
     # Initialize extensions
     db.init_app(app)
     celery = make_celery(app)
     socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
-    
+
     # Create database tables
     with app.app_context():
         db.create_all()
-    
+
     # Ensure required directories exist
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     os.makedirs(app.config['SLIDESHOW_FOLDER'], exist_ok=True)
     os.makedirs(app.config['TEMP_FOLDER'], exist_ok=True)
-    
+
+    # Setup middleware - redirect to setup if not complete
+    @app.before_request
+    def check_setup():
+        from .setup import is_setup_complete
+        # Skip setup check for setup routes, static files, and health check
+        if request.endpoint and (
+            request.endpoint.startswith('setup') or
+            request.endpoint == 'static' or
+            request.endpoint == 'health_check'
+        ):
+            return None
+
+        if not is_setup_complete():
+            return redirect(url_for('setup_wizard'))
+
     # Authentication decorator
     def admin_required(f):
         @wraps(f)
@@ -51,7 +69,69 @@ def create_app(config_class=Config):
                 return redirect(url_for('login'))
             return f(*args, **kwargs)
         return decorated_function
-    
+
+    # Setup Routes
+    @app.route('/setup', methods=['GET', 'POST'])
+    def setup_wizard():
+        """First-time setup wizard"""
+        from .setup import is_setup_complete, save_config, mark_setup_complete
+
+        # Redirect to dashboard if already set up
+        if is_setup_complete():
+            return redirect(url_for('admin_dashboard'))
+
+        if request.method == 'POST':
+            try:
+                # Get form data
+                admin_password = request.form.get('admin_password', '').strip()
+                admin_password_confirm = request.form.get('admin_password_confirm', '').strip()
+                screen_width = int(request.form.get('screen_width', 1280))
+                screen_height = int(request.form.get('screen_height', 800))
+                rotation_interval = int(request.form.get('rotation_interval', 60))
+
+                # Validation
+                if not admin_password:
+                    flash('Admin password is required', 'error')
+                    return render_template('setup.html')
+
+                if len(admin_password) < 8:
+                    flash('Admin password must be at least 8 characters', 'error')
+                    return render_template('setup.html')
+
+                if admin_password != admin_password_confirm:
+                    flash('Passwords do not match', 'error')
+                    return render_template('setup.html')
+
+                # Save configuration
+                config_data = {
+                    'admin_password': admin_password,
+                    'default_screen_width': screen_width,
+                    'default_screen_height': screen_height,
+                    'default_rotation_interval': rotation_interval
+                }
+                save_config(config_data)
+
+                # Mark setup as complete
+                mark_setup_complete()
+
+                # Update app config with new values
+                app.config['ADMIN_PASSWORD'] = admin_password
+                app.config['DEFAULT_SCREEN_WIDTH'] = screen_width
+                app.config['DEFAULT_SCREEN_HEIGHT'] = screen_height
+                app.config['DEFAULT_ROTATION_INTERVAL'] = rotation_interval
+
+                flash('Setup completed successfully! Please log in with your admin password.', 'success')
+                return redirect(url_for('login'))
+
+            except ValueError as e:
+                flash(f'Invalid input: {str(e)}', 'error')
+                return render_template('setup.html')
+            except Exception as e:
+                flash(f'Setup error: {str(e)}', 'error')
+                return render_template('setup.html')
+
+        return render_template('setup.html')
+
     # Routes
     @app.route('/login', methods=['GET', 'POST'])
     def login():
