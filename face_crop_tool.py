@@ -470,34 +470,27 @@ class FaceAwareCropper:
             faces = self.detect_faces(cv_image)
             if verbose: print(f"Detected {len(faces)} face(s) in {input_path}")
 
-            # --- Stage 5: The "Composite or Crop" Decision ---
+            # --- "Composite or Crop" Decision ---
             use_composite = False
-            is_portrait_on_landscape = original_ratio < 1.0 and target_ratio > 1.0
+            # First, calculate the best possible smart crop.
+            crop_rect = self.calculate_smart_crop(original_width, original_height, faces, target_width, target_height)
 
+            # Decide if we need to use the composite method instead.
+            is_portrait_on_landscape = original_ratio < 1.0 and target_ratio > 1.0
             if is_portrait_on_landscape and faces:
-                # Heuristic: If a simple crop would discard > 60% of the image,
-                # it's better to use the composite method.
-                crop_rect = self.calculate_smart_crop(original_width, original_height, faces, target_width, target_height)
+                # Heuristic: If the smart crop would discard > 60% of the image, composite is better.
                 crop_area = (crop_rect[2] - crop_rect[0]) * (crop_rect[3] - crop_rect[1])
                 original_area = original_width * original_height
                 
-                if (original_area > 0 and (original_area - crop_area) / original_area > 0.60):
+                if original_area > 0 and ((original_area - crop_area) / original_area) > 0.60:
                     use_composite = True
                     if verbose: print("Extreme crop detected. Switching to blurred background composite.")
 
             if use_composite:
                 final_image = self._create_blurred_background_composite(pil_image, target_width, target_height, verbose)
             else:
-                # Proceed with the standard smart crop
+                # Proceed with the standard smart crop using the rectangle we already calculated.
                 if verbose: print("Standard crop processing.")
-                crop_rect = self.calculate_smart_crop(original_width, original_height, faces, target_width, target_height)
-                
-                # The new algorithm is much safer, but a final validation is still good practice.
-                if faces and not self.validate_faces_in_crop(faces, crop_rect):
-                    if verbose: print("Warning: Initial crop would cut faces. Recalculating with safety priority...")
-                    # This safety crop is a simple fallback, but the main algorithm should prevent this.
-                    crop_rect = self._get_safety_crop(faces, original_width, original_height, target_ratio)
-
                 cropped = pil_image.crop(crop_rect)
                 final_image = cropped.resize((target_width, target_height), Image.Resampling.LANCZOS)
 
@@ -515,7 +508,7 @@ class FaceAwareCropper:
             
         except Exception as e:
             if verbose:
-                print(f"Error processing {input_path}: {str(e)}")
+                print(f"Error processing {input_path}: {e}")
             return False
     
     def process_folder(self, input_folder, output_folder, target_width=1280, target_height=800, max_workers=None):
