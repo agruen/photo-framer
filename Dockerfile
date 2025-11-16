@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     libffi-dev \
     libssl-dev \
     libglib2.0-0 \
+    libgl1-mesa-glx \
     libgomp1 \
     libjpeg-dev \
     libpng-dev \
