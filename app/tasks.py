@@ -311,28 +311,29 @@ def process_slideshow(self, slideshow_id):
             return {'error': str(e), 'slideshow_id': slideshow_id}
 
 
+from flask_socketio import SocketIO
+
+# Create a new SocketIO instance for Celery worker
+socketio_celery = SocketIO(message_queue=Config.CELERY_BROKER_URL)
+
 def emit_progress_update(slideshow_id, status, progress, message, **kwargs):
     """
     Emit progress update via WebSocket if available.
     """
     try:
-        # Import here to avoid circular imports
-        from .app import socketio
-        if socketio:
-            update_data = {
-                'slideshow_id': slideshow_id,
-                'status': status,
-                'progress': progress,
-                'message': message
-            }
-            # Add any additional data
-            update_data.update(kwargs)
-            
-            socketio.emit('progress_update', update_data, room=f'slideshow_{slideshow_id}')
-            logger.info(f"Emitted progress update for slideshow {slideshow_id}: {progress}% - {message}")
+        update_data = {
+            'slideshow_id': slideshow_id,
+            'status': status,
+            'progress': progress,
+            'message': message
+        }
+        # Add any additional data
+        update_data.update(kwargs)
+        
+        socketio_celery.emit('progress_update', update_data, room=f'slideshow_{slideshow_id}')
+        logger.info(f"Emitted progress update for slideshow {slideshow_id}: {progress}% - {message}")
     except Exception as e:
-        logger.debug(f"Could not emit progress update: {e}")
-        pass  # WebSocket not available, that's OK
+        logger.error(f"Could not emit progress update: {e}")
 
 
 @celery.task(bind=True, base=DatabaseTask)

@@ -35,7 +35,7 @@ def create_app(config_class=Config):
     # Initialize extensions
     db.init_app(app)
     celery = make_celery(app)
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet', message_queue=app.config['CELERY_BROKER_URL'])
 
     # Create database tables
     with app.app_context():
@@ -676,6 +676,7 @@ def create_app(config_class=Config):
         if slideshow_id and session.get('admin_logged_in'):
             room = f'slideshow_{slideshow_id}'
             join_room(room)
+            app.logger.info(f"Client joined room: {room}")
             emit('joined_room', {'room': room})
     
     @socketio.on('leave_slideshow')
