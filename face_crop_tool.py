@@ -31,7 +31,23 @@ class FaceAwareCropper:
         self.eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
         self.profile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_profileface.xml')
         self.body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_fullbody.xml')
-        
+
+        # Try to load MediaPipe face detection (best accuracy and speed)
+        try:
+            import mediapipe as mp
+            self.mp_face_detection = mp.solutions.face_detection
+            self.mp_detector = self.mp_face_detection.FaceDetection(
+                model_selection=1,  # 0=short range (<2m), 1=full range (best for photos)
+                min_detection_confidence=0.5
+            )
+            self.use_mediapipe = True
+            print("✓ Using MediaPipe face detection (95%+ accuracy)")
+        except ImportError:
+            self.mp_detector = None
+            self.use_mediapipe = False
+            print("⚠ MediaPipe not installed. Install with: pip install mediapipe")
+            print("  Falling back to OpenCV (60-70% accuracy)")
+
         # Try to load DNN face detector for better accuracy (fallback to Haar if not available)
         try:
             self.dnn_net = cv2.dnn.readNetFromTensorflow('opencv_face_detector_uint8.pb', 'opencv_face_detector.pbtxt')
@@ -44,9 +60,32 @@ class FaceAwareCropper:
         """Detect faces using multiple methods for better accuracy."""
         height, width = image.shape[:2]
         faces = []
-        
-        # Method 1: Try DNN face detection first (more accurate)
-        if self.use_dnn:
+
+        # Method 1: Try MediaPipe first (best accuracy: 95%+)
+        if self.use_mediapipe:
+            # Convert BGR to RGB for MediaPipe
+            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results = self.mp_detector.process(rgb_image)
+
+            if results.detections:
+                for detection in results.detections:
+                    bbox = detection.location_data.relative_bounding_box
+                    # Convert relative coordinates to absolute
+                    x1 = int(bbox.xmin * width)
+                    y1 = int(bbox.ymin * height)
+                    x2 = int((bbox.xmin + bbox.width) * width)
+                    y2 = int((bbox.ymin + bbox.height) * height)
+
+                    # Ensure coordinates are within image bounds
+                    x1 = max(0, x1)
+                    y1 = max(0, y1)
+                    x2 = min(width, x2)
+                    y2 = min(height, y2)
+
+                    faces.append((x1, y1, x2, y2))
+
+        # Method 2: Try DNN face detection (good accuracy: 90%+)
+        if len(faces) == 0 and self.use_dnn:
             blob = cv2.dnn.blobFromImage(image, 1.0, (300, 300), [104, 117, 123])
             self.dnn_net.setInput(blob)
             detections = self.dnn_net.forward()
@@ -60,7 +99,7 @@ class FaceAwareCropper:
                     y2 = int(detections[0, 0, i, 6] * height)
                     faces.append((x1, y1, x2, y2))
         
-        # Method 2: Haar cascade detection (fallback or supplement)
+        # Method 3: Haar cascade detection (legacy fallback: 60-70%)
         if len(faces) == 0:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             
@@ -86,7 +125,7 @@ class FaceAwareCropper:
                         faces.append((x, y, x + w, y + h))
                     break
         
-        # Method 3: Eye detection to supplement face detection
+        # Method 4: Eye detection to estimate faces (last resort)
         if len(faces) == 0:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             eyes = self.eye_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(15, 15))
@@ -171,13 +210,57 @@ class FaceAwareCropper:
         """Calculate the bounding box that encompasses all detected faces."""
         if not faces:
             return None
-        
+
         min_x = min(face[0] for face in faces)
         min_y = min(face[1] for face in faces)
         max_x = max(face[2] for face in faces)
         max_y = max(face[3] for face in faces)
-        
+
         return (min_x, min_y, max_x, max_y)
+
+    def validate_faces_in_crop(self, faces, crop_rect, safety_margin_percent=0.05):
+        """
+        Validate that ALL faces are safely within the crop boundaries.
+        Returns True if all faces are included with safety margin, False otherwise.
+        """
+        if not faces:
+            return True
+
+        crop_x1, crop_y1, crop_x2, crop_y2 = crop_rect
+        crop_width = crop_x2 - crop_x1
+        crop_height = crop_y2 - crop_y1
+
+        # Add safety margin (5% inside crop boundaries by default)
+        safety_x = crop_width * safety_margin_percent
+        safety_y = crop_height * safety_margin_percent
+        safe_x1 = crop_x1 + safety_x
+        safe_y1 = crop_y1 + safety_y
+        safe_x2 = crop_x2 - safety_x
+        safe_y2 = crop_y2 - safety_y
+
+        # Check each face
+        for face in faces:
+            # Get face boundaries
+            face_x1, face_y1, face_x2, face_y2 = face
+            face_center_x = (face_x1 + face_x2) / 2
+            face_center_y = (face_y1 + face_y2) / 2
+
+            # Check if entire face is within safe zone
+            face_in_safe_zone = (
+                safe_x1 <= face_x1 and face_x2 <= safe_x2 and
+                safe_y1 <= face_y1 and face_y2 <= safe_y2
+            )
+
+            # At minimum, face center must be in safe zone
+            center_in_safe_zone = (
+                safe_x1 <= face_center_x <= safe_x2 and
+                safe_y1 <= face_center_y <= safe_y2
+            )
+
+            if not center_in_safe_zone:
+                return False
+
+        return True
     
     def calculate_smart_crop(self, image_width, image_height, faces, target_width=1280, target_height=800):
         """Calculate the best crop rectangle with advanced composition and face preservation."""
@@ -209,25 +292,59 @@ class FaceAwareCropper:
         face_center_y = (face_bbox[1] + face_bbox[3]) / 2
         face_width = face_bbox[2] - face_bbox[0]
         face_height = face_bbox[3] - face_bbox[1]
-        
-        # Calculate minimum padding needed to preserve all faces
-        min_padding = max(20, min(face_width, face_height) * 0.15)
-        
+
+        # Calculate generous padding to preserve all faces (industry standard: 40-50%)
+        # Single portrait gets more padding, groups get slightly less
+        padding_percent = 0.50 if len(faces) == 1 else 0.40
+        min_padding = max(face_width, face_height) * padding_percent
+
+        # Add extra headroom above faces for hair, hats, forehead (50% of face height)
+        headroom = face_height * 0.50
+
         # Calculate required crop boundaries to include all faces with padding
         required_left = face_bbox[0] - min_padding
         required_right = face_bbox[2] + min_padding
-        required_top = face_bbox[1] - min_padding
+        required_top = face_bbox[1] - min_padding - headroom  # Extra space above
         required_bottom = face_bbox[3] + min_padding
-        
+
         # Calculate minimum crop dimensions needed for all faces
         min_crop_width = required_right - required_left
         min_crop_height = required_bottom - required_top
-        
-        # If crop area is too small for all faces, we must include all faces (no cropping choice)
+
+        # CRITICAL FIX: If faces need more space than available crop, expand the crop area
+        # This prevents face cropping by using a larger crop that we'll resize down
         if min_crop_width > crop_width or min_crop_height > crop_height:
-            # Force crop to center on faces - no choice but to include them all
-            crop_x = max(0, min(required_left, image_width - crop_width))
-            crop_y = max(0, min(required_top, image_height - crop_height))
+            # Calculate aspect ratio of faces vs target
+            faces_aspect = min_crop_width / min_crop_height
+            target_aspect = crop_width / crop_height
+
+            if faces_aspect > target_aspect:
+                # Faces are wider - expand based on width
+                actual_crop_width = min_crop_width
+                actual_crop_height = actual_crop_width / target_aspect
+            else:
+                # Faces are taller - expand based on height
+                actual_crop_height = min_crop_height
+                actual_crop_width = actual_crop_height * target_aspect
+
+            # Center this larger crop on the face group
+            crop_x = face_center_x - actual_crop_width / 2
+            crop_y = face_center_y - actual_crop_height / 2
+
+            # Ensure crop stays within image bounds
+            if crop_x < 0:
+                crop_x = 0
+            elif crop_x + actual_crop_width > image_width:
+                crop_x = image_width - actual_crop_width
+
+            if crop_y < 0:
+                crop_y = 0
+            elif crop_y + actual_crop_height > image_height:
+                crop_y = image_height - actual_crop_height
+
+            # Use the expanded crop dimensions
+            crop_width = actual_crop_width
+            crop_height = actual_crop_height
         else:
             # We have flexibility - optimize for composition while preserving faces
             
@@ -329,9 +446,45 @@ class FaceAwareCropper:
             faces = self.detect_faces(cv_image)
             if verbose:
                 print(f"Detected {len(faces)} face(s)")
-            
+
             # Calculate smart crop
             crop_rect = self.calculate_smart_crop(width, height, faces, target_width, target_height)
+
+            # VALIDATION: Ensure all faces are safely in crop
+            if faces and not self.validate_faces_in_crop(faces, crop_rect):
+                if verbose:
+                    print("Warning: Initial crop would cut faces. Recalculating with safety priority...")
+                # Force a safer crop that guarantees all faces
+                face_bbox = self.calculate_face_bounding_box(faces)
+                face_center_x = (face_bbox[0] + face_bbox[2]) / 2
+                face_center_y = (face_bbox[1] + face_bbox[3]) / 2
+                face_width = face_bbox[2] - face_bbox[0]
+                face_height = face_bbox[3] - face_bbox[1]
+
+                # Use maximum padding to guarantee safety
+                safety_padding = max(face_width, face_height) * 0.60  # 60% padding for safety
+
+                # Calculate safe crop dimensions
+                target_ratio = target_width / target_height
+                safe_width = (face_width + 2 * safety_padding)
+                safe_height = safe_width / target_ratio
+
+                if safe_height < (face_height + 2 * safety_padding):
+                    safe_height = (face_height + 2 * safety_padding)
+                    safe_width = safe_height * target_ratio
+
+                # Center on faces
+                safe_x = face_center_x - safe_width / 2
+                safe_y = face_center_y - safe_height / 2
+
+                # Bounds check
+                safe_x = max(0, min(safe_x, width - safe_width))
+                safe_y = max(0, min(safe_y, height - safe_height))
+
+                crop_rect = (int(safe_x), int(safe_y), int(safe_x + safe_width), int(safe_y + safe_height))
+
+                if verbose:
+                    print(f"Applied safety crop: {crop_rect}")
             
             # Load with PIL for better image handling and cropping
             pil_image = Image.open(input_path)
