@@ -7,7 +7,7 @@ numpy==1.26.4
 mediapipe==0.10.14
 
 # New face detection engine for higher accuracy
-dlib==19.22.0
+dlib==19.24.2
 
 # HTTP requests, for downloading dlib model
 requests==2.31.0
