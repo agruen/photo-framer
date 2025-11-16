@@ -5,11 +5,12 @@ FROM python:3.11-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies - minimal set that works on both amd64 and arm64
+# Install system dependencies - includes dlib dependencies for arm64 compilation
 RUN apt-get update && apt-get install -y \
     curl \
     wget \
     build-essential \
+    cmake \
     python3-dev \
     libffi-dev \
     libssl-dev \
@@ -20,6 +21,9 @@ RUN apt-get update && apt-get install -y \
     libpng-dev \
     libheif-dev \
     libde265-dev \
+    libopenblas-dev \
+    liblapack-dev \
+    libgtk-3-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -29,6 +33,7 @@ WORKDIR /app
 COPY requirements-server.txt .
 
 # Install Python packages with increased timeout and no cache for better compatibility
+# This step will be slow on ARM devices as it compiles dlib from source.
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir --timeout=1000 -r requirements-server.txt
 

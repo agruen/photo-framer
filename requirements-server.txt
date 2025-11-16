@@ -6,6 +6,12 @@ numpy==1.26.4
 # Face detection - MediaPipe for 95%+ accuracy (highly recommended)
 mediapipe==0.10.14
 
+# New face detection engine for higher accuracy
+dlib==19.24.2
+
+# HTTP requests, for downloading dlib model
+requests==2.31.0
+
 # Web framework
 Flask==3.0.3
 Flask-SQLAlchemy==3.1.1
