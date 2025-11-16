@@ -273,12 +273,11 @@ class FaceAwareCropper:
         face_center_x = face_bbox[0] + face_width / 2
         face_center_y = face_bbox[1] + face_height / 2
 
-        # Rule of thirds: position the top of the head roughly 1/3 from the top
-        # We give a lot of headroom, 100% of the face height
-        headroom = face_height * 1.0
+        # Give more headroom to avoid cutting off the top of the head
+        headroom = face_height * 1.5
         
-        # The amount of the body to show below the chin.
-        body_room = face_height * 0.5
+        # Show more of the body
+        body_room = face_height * 1.0
 
         # Calculate the total height required for the crop
         required_height = face_height + headroom + body_room
@@ -290,13 +289,15 @@ class FaceAwareCropper:
         if required_width > image_width:
             required_width = image_width
             required_height = required_width / target_ratio
-            headroom = (required_height - face_height - body_room) / 2 # re-balance headroom
+            # Recalculate headroom and body_room to maintain vertical centering
+            headroom = (required_height - face_height) / 2
+            body_room = headroom
 
         # Center the crop horizontally on the face
         crop_x = face_center_x - required_width / 2
         
-        # Position the crop vertically, applying the headroom
-        crop_y = face_bbox[1] - headroom
+        # Center the face vertically in the crop
+        crop_y = face_center_y - (required_height / 2)
 
         # Boundary checks to ensure the crop is within the image
         if crop_x < 0:
@@ -336,11 +337,11 @@ class FaceAwareCropper:
         face_height = face_bbox[3] - face_bbox[1]
 
         # Generous padding for landscape shots
-        padding_percent = 0.60 if len(faces) == 1 else 0.40
+        padding_percent = 0.80 if len(faces) == 1 else 0.60
         min_padding = max(face_width, face_height) * padding_percent
 
         # Increased headroom for landscape shots
-        headroom = face_height * 0.80
+        headroom = face_height * 1.2
 
         # Define the required area to keep faces safe
         required_left = face_bbox[0] - min_padding
