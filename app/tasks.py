@@ -16,6 +16,38 @@ sys.path.append('/app')  # Add app directory to Python path
 from face_crop_tool import FaceAwareCropper
 from slideshow_generator import generate_slideshow_html
 
+# HEIC conversion support
+import pyheif
+from PIL import Image
+
+
+def convert_heic_to_jpeg(heic_path):
+    """Converts a HEIC file to JPEG and returns the new path."""
+    try:
+        heif_file = pyheif.read(heic_path)
+        image = Image.frombytes(
+            heif_file.mode, 
+            heif_file.size, 
+            heif_file.data,
+            "raw",
+            heif_file.mode,
+            heif_file.stride,
+        )
+        
+        jpeg_path = os.path.splitext(heic_path)[0] + ".jpg"
+        image.save(jpeg_path, "JPEG")
+        
+        # Remove original HEIC file to save space
+        os.remove(heic_path)
+        
+        logger.info(f"Converted HEIC file '{heic_path}' to '{jpeg_path}'")
+        return jpeg_path
+    except Exception as e:
+        logger.error(f"Failed to convert HEIC file '{heic_path}': {e}")
+        return None
+
+
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -92,7 +124,7 @@ def process_slideshow(self, slideshow_id):
             emit_progress_update(slideshow_id, 'processing', 5, 'Extracting zip file...')
             
             image_files = []
-            supported_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
+            supported_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.heic', '.heif'}
             
             with zipfile.ZipFile(upload_path, 'r') as zip_ref:
                 # Get list of image files in zip
@@ -126,6 +158,17 @@ def process_slideshow(self, slideshow_id):
                             image_files.append(safe_path)
             
             emit_progress_update(slideshow_id, 'processing', 15, f'Extracted {len(image_files)} images')
+
+            # Convert HEIC files to JPEG
+            converted_image_files = []
+            for image_file in image_files:
+                if image_file.lower().endswith(('.heic', '.heif')):
+                    new_path = convert_heic_to_jpeg(image_file)
+                    if new_path:
+                        converted_image_files.append(new_path)
+                else:
+                    converted_image_files.append(image_file)
+            image_files = converted_image_files
             
             # Step 2: Process images with face-aware cropping
             logger.info(f"Processing {len(image_files)} images with face detection")
@@ -367,7 +410,7 @@ def process_folder_slideshow(self, slideshow_id):
             logger.info(f"Scanning folder for images: {input_path}")
             emit_progress_update(slideshow_id, 'processing', 5, 'Scanning for images...')
             
-            supported_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp'}
+            supported_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp', '.heic', '.heif'}
             image_files = []
             
             # Recursively find all image files
@@ -378,6 +421,18 @@ def process_folder_slideshow(self, slideshow_id):
                         image_files.append(full_path)
             
             logger.info(f"Found {len(image_files)} image files in folder")
+            
+            # Convert HEIC files to JPEG
+            converted_image_files = []
+            for image_file in image_files:
+                if image_file.lower().endswith(('.heic', '.heif')):
+                    new_path = convert_heic_to_jpeg(image_file)
+                    if new_path:
+                        converted_image_files.append(new_path)
+                else:
+                    converted_image_files.append(image_file)
+            image_files = converted_image_files
+            
             slideshow.total_images = len(image_files)
             db.session.commit()
             
@@ -559,9 +614,20 @@ def add_photos_to_slideshow(self, slideshow_id):
                     existing_processed.append(file)
                 elif file != 'slideshow.html':
                     # Check if it's an image file that needs processing
-                    supported_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp'}
+                    supported_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp', '.heic', '.heif'}
                     if any(file.lower().endswith(ext) for ext in supported_extensions):
                         new_unprocessed.append(os.path.join(slideshow_path, file))
+
+            # Convert HEIC files to JPEG
+            converted_unprocessed = []
+            for image_file in new_unprocessed:
+                if image_file.lower().endswith(('.heic', '.heif')):
+                    new_path = convert_heic_to_jpeg(image_file)
+                    if new_path:
+                        converted_unprocessed.append(new_path)
+                else:
+                    converted_unprocessed.append(image_file)
+            new_unprocessed = converted_unprocessed
 
             # Determine starting index
             start_index = len(existing_processed) + 1

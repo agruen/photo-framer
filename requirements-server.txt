@@ -18,6 +18,10 @@ redis==5.0.7
 # File handling
 Werkzeug==3.0.3
 
+# Image handling
+pyheif==0.7.0
+Pillow-heif==0.16.0
+
 # Security
 bcrypt==4.1.3
 

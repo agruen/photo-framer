@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y \
     libgomp1 \
     libjpeg-dev \
     libpng-dev \
+    libheif-dev \
+    libde265-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
