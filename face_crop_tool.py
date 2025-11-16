@@ -263,59 +263,81 @@ class FaceAwareCropper:
         return True
     
     def calculate_smart_crop(self, image_width, image_height, faces, target_width=1280, target_height=800):
-        """Calculate the best crop rectangle with advanced composition and face preservation."""
+        """
+        Calculates the optimal crop box based on the 'Interest-Region' algorithm.
+        This function determines the best possible crop that contains the subject
+        with good composition, handling various edge cases.
+        """
         target_ratio = target_width / target_height
 
-        if faces:
-            return self._calculate_face_aware_crop(image_width, image_height, faces, target_ratio)
-        else:
+        if not faces:
             # Fallback for images without faces
             return self._calculate_content_aware_crop(image_width, image_height, target_width, target_height)
 
-    def _calculate_face_aware_crop(self, image_width, image_height, faces, target_ratio):
-        """
-        Calculates a crop that contains all faces, is centered, and has a bit of padding.
-        """
-        face_bbox = self.calculate_face_bounding_box(faces)
-        face_width = face_bbox[2] - face_bbox[0]
-        face_height = face_bbox[3] - face_bbox[1]
-        face_center_x = face_bbox[0] + face_width / 2
-        face_center_y = face_bbox[1] + face_height / 2
+        # --- Stages 1 & 2: Determine Padded Region of Interest (ROI) ---
+        roi = self.calculate_face_bounding_box(faces)
+        roi_width = roi[2] - roi[0]
+        roi_height = roi[3] - roi[1]
 
-        # Add padding to the face bounding box. This is the key to not cropping too tightly.
-        # We'll add 40% padding on each side (horizontally) and 60% vertically.
-        padded_width = face_width * 1.8
-        padded_height = face_height * 2.2
+        padding_top = roi_height * 0.7
+        padding_bottom = roi_height * 0.4
+        padding_horizontal = roi_width * 0.5
 
-        # Determine the crop dimensions based on the target aspect ratio.
-        # The crop must be large enough to contain the padded face box.
-        if padded_width / padded_height > target_ratio:
-            # The padded area is wider than the target ratio, so width is the limiting dimension.
-            crop_width = padded_width
-            crop_height = crop_width / target_ratio
+        padded_roi = {
+            'x': roi[0] - padding_horizontal,
+            'y': roi[1] - padding_top,
+            'width': roi_width + (2 * padding_horizontal),
+            'height': roi_height + padding_top + padding_bottom
+        }
+
+        # --- Stage 3: Calculate Ideal Final Crop Dimensions ---
+        padded_roi_ratio = padded_roi['width'] / padded_roi['height']
+
+        if padded_roi_ratio > target_ratio:
+            # Padded ROI is wider than target, so width is the limiting factor
+            ideal_crop_width = padded_roi['width']
+            ideal_crop_height = ideal_crop_width / target_ratio
         else:
-            # The padded area is taller than the target ratio, so height is the limiting dimension.
-            crop_height = padded_height
-            crop_width = crop_height * target_ratio
+            # Padded ROI is taller than target, so height is the limiting factor
+            ideal_crop_height = padded_roi['height']
+            ideal_crop_width = ideal_crop_height * target_ratio
 
-        # Center the crop box on the center of the face bounding box.
-        crop_x = face_center_x - crop_width / 2
-        crop_y = face_center_y - crop_height / 2
+        # --- Stage 3.5: The "Maximal Crop" Strategy ---
+        # If the ideal crop is larger than the image, scale it down to the largest possible crop.
+        if ideal_crop_width > image_width or ideal_crop_height > image_height:
+            if image_width / image_height > target_ratio:
+                # Image is wider than target, so we are limited by image height
+                final_crop_height = image_height
+                final_crop_width = final_crop_height * target_ratio
+            else:
+                # Image is taller than target, so we are limited by image width
+                final_crop_width = image_width
+                final_crop_height = final_crop_width / target_ratio
+        else:
+            final_crop_width = ideal_crop_width
+            final_crop_height = ideal_crop_height
 
-        # Ensure the crop box does not go outside the image boundaries.
-        # If it does, we shift it. This is a crucial step.
-        if crop_x < 0:
-            crop_x = 0
-        if crop_y < 0:
-            crop_y = 0
-        if crop_x + crop_width > image_width:
-            crop_x = image_width - crop_width
-        if crop_y + crop_height > image_height:
-            crop_y = image_height - crop_height
-            
-        return (int(crop_x), int(crop_y), int(crop_x + crop_width), int(crop_y + crop_height))
-    
-    
+        # --- Stage 4: Position the Crop Box and Correct Boundaries ---
+        # Position according to Rule of Thirds for the eyes
+        eye_line_y = roi[1] + (roi_height * 0.25)
+        ideal_crop_y = eye_line_y - (final_crop_height / 3)
+
+        # Center horizontally on the original ROI
+        roi_center_x = roi[0] + (roi_width / 2)
+        ideal_crop_x = roi_center_x - (final_crop_width / 2)
+
+        # Boundary correction
+        crop_x = max(0, ideal_crop_x)
+        crop_y = max(0, ideal_crop_y)
+
+        if crop_x + final_crop_width > image_width:
+            crop_x = image_width - final_crop_width
+        if crop_y + final_crop_height > image_height:
+            crop_y = image_height - final_crop_height
+
+        return (int(crop_x), int(crop_y), int(crop_x + final_crop_width), int(crop_y + final_crop_height))
+
+
     def _calculate_content_aware_crop(self, image_width, image_height, crop_width, crop_height):
         """Calculate crop for images without faces using content analysis."""
         target_ratio = crop_width / crop_height
@@ -367,47 +389,50 @@ class FaceAwareCropper:
         
         return enhanced
     
-    def _create_blurred_background_composite(self, pil_image, content_box, target_width, target_height, verbose):
+    def _create_blurred_background_composite(self, pil_image, target_width, target_height, verbose=False):
+        """
+        Creates a composite image with a blurred, scaled version of the original
+        image as the background, and the sharp, original-aspect-ratio image as the
+        foreground.
+        """
         if verbose: print("Creating blurred background composite.")
         
         original_width, original_height = pil_image.size
-        target_ratio = target_width / target_height
-
-        # 1. Create blurred, darkened background
-        bg_ratio = original_width / original_height
-        bg_width, bg_height = (target_width, int(target_width / bg_ratio))
+        
+        # 1. Create the Background Layer
+        # Resize the original image to fill the target width
+        bg_width = target_width
+        bg_height = int(original_height * (target_width / original_width))
         background_image = pil_image.resize((bg_width, bg_height), Image.Resampling.LANCZOS)
+        
+        # Apply blur and darken
         background_image = background_image.filter(ImageFilter.GaussianBlur(radius=25))
         enhancer = ImageEnhance.Brightness(background_image)
-        background_image = enhancer.enhance(0.6)
-
+        background_image = enhancer.enhance(0.7)
+        
+        # Center-crop the background to the final target dimensions
         left = (background_image.width - target_width) / 2
         top = (background_image.height - target_height) / 2
         background_image = background_image.crop((left, top, left + target_width, top + target_height))
 
-        # 2. Resize original image to fit while keeping content_box visible
-        # We want the content_box to be fully visible. Let's scale based on that.
-        content_h = content_box[3] - content_box[1]
-        # Scale the whole image so the content box height is, e.g., 80% of target height
-        scale_factor = (target_height * 0.8) / content_h
-        
-        new_width = int(original_width * scale_factor)
-        new_height = int(original_height * scale_factor)
-        
-        # If this makes it too wide, scale down to fit width
-        if new_width > target_width:
-            scale_factor = target_width / new_width
-            new_width = target_width
-            new_height = int(new_height * scale_factor)
-            
-        foreground_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        # 2. Create the Foreground Layer
+        # Scale the sharp original image to fit nicely within the target height
+        fg_height = int(target_height * 0.9) # 90% of the frame height
+        fg_width = int(original_width * (fg_height / original_height))
 
-        # 3. Paste foreground, centering the content_box
-        content_box_center_y_scaled = (content_box[1] + content_h / 2) * scale_factor
-        paste_y = int(target_height / 2 - content_box_center_y_scaled)
-        paste_x = (target_width - new_width) // 2
+        # If this makes it too wide, scale to fit width instead
+        if fg_width > int(target_width * 0.95):
+            fg_width = int(target_width * 0.95)
+            fg_height = int(original_height * (fg_width / original_width))
 
-        final_image = background_image.copy()
+        foreground_image = pil_image.resize((fg_width, fg_height), Image.Resampling.LANCZOS)
+
+        # 3. Combine the Layers
+        final_image = background_image
+        
+        # Paste the foreground in the center
+        paste_x = (target_width - fg_width) // 2
+        paste_y = (target_height - fg_height) // 2
         final_image.paste(foreground_image, (paste_x, paste_y))
         
         return final_image
@@ -430,86 +455,47 @@ class FaceAwareCropper:
     
     def crop_image(self, input_path, output_path, target_width=1280, target_height=800, verbose=True):
         """
-        Crop a single image with intelligent, face-aware logic that maximizes content
-        and uses a blurred background for portrait images when necessary.
+        Crops or composites an image to the target dimensions using a robust,
+        face-aware algorithm that falls back to a blurred background when necessary.
         """
         try:
-            # Load image with PIL and OpenCV
             pil_image = Image.open(input_path).convert('RGB')
             cv_image = np.array(pil_image)
-            cv_image = cv_image[:, :, ::-1].copy() # Convert RGB to BGR for OpenCV
+            cv_image = cv_image[:, :, ::-1].copy()
 
             original_width, original_height = pil_image.size
             target_ratio = target_width / target_height
             original_ratio = original_width / original_height
-
-            # Always detect faces first
+            
             faces = self.detect_faces(cv_image)
-            if verbose:
-                print(f"Detected {len(faces)} face(s) in {input_path}")
+            if verbose: print(f"Detected {len(faces)} face(s) in {input_path}")
 
-            # --- Portrait on Landscape Special Handling ---
-            if original_ratio < target_ratio and original_height > original_width:
-                if verbose:
-                    print("Portrait image on landscape frame detected. Applying advanced logic...")
+            # --- Stage 5: The "Composite or Crop" Decision ---
+            use_composite = False
+            is_portrait_on_landscape = original_ratio < 1.0 and target_ratio > 1.0
 
-                # Determine the primary content box (faces or center)
-                if faces:
-                    content_box = self.calculate_face_bounding_box(faces)
-                else:
-                    # If no faces, content is the center third of the image
-                    content_box_height = original_height / 3
-                    content_box_top = (original_height - content_box_height) / 2
-                    content_box = (0, content_box_top, original_width, content_box_top + content_box_height)
-
-                # Add padding to the content box for better composition
-                padding_v = (content_box[3] - content_box[1]) * 0.4 # 40% vertical padding
-                padding_h = (content_box[2] - content_box[0]) * 0.4 # 40% horizontal padding
-                padded_box = (
-                    max(0, content_box[0] - padding_h),
-                    max(0, content_box[1] - padding_v),
-                    min(original_width, content_box[2] + padding_h),
-                    min(original_height, content_box[3] + padding_v)
-                )
+            if is_portrait_on_landscape and faces:
+                # Heuristic: If a simple crop would discard > 60% of the image,
+                # it's better to use the composite method.
+                crop_rect = self.calculate_smart_crop(original_width, original_height, faces, target_width, target_height)
+                crop_area = (crop_rect[2] - crop_rect[0]) * (crop_rect[3] - crop_rect[1])
+                original_area = original_width * original_height
                 
-                # Can we crop the padded box directly?
-                padded_width = padded_box[2] - padded_box[0]
-                padded_height = padded_box[3] - padded_box[1]
-                
-                # If the padded content is not excessively tall, try to crop directly
-                if (padded_height / padded_width) < (target_ratio * 1.5): # Avoid extreme vertical crops
-                    crop_h = padded_height
-                    crop_w = int(crop_h * target_ratio)
-                    
-                    # Center the crop horizontally on the content
-                    crop_x = (padded_box[0] + padded_box[2]) / 2 - (crop_w / 2)
-                    crop_y = padded_box[1]
+                if (original_area > 0 and (original_area - crop_area) / original_area > 0.60):
+                    use_composite = True
+                    if verbose: print("Extreme crop detected. Switching to blurred background composite.")
 
-                    # Boundary checks
-                    if crop_x < 0: crop_x = 0
-                    if crop_y < 0: crop_y = 0
-                    if crop_x + crop_w > original_width: crop_x = original_width - crop_w
-                    if crop_y + crop_h > original_height: crop_y = original_height - crop_h
-                    
-                    if crop_w <= original_width and crop_h <= original_height:
-                        if verbose: print("Attempting direct face-aware crop for portrait.")
-                        crop_rect = (int(crop_x), int(crop_y), int(crop_x + crop_w), int(crop_y + crop_h))
-                        cropped = pil_image.crop(crop_rect)
-                        final_image = cropped.resize((target_width, target_height), Image.Resampling.LANCZOS)
-                        # --- This path ends here if successful ---
-                    else:
-                        # Fallback to blur if direct crop is not possible
-                        final_image = self._create_blurred_background_composite(pil_image, content_box, target_width, target_height, verbose)
-
-                else: # Content is too tall, use blurred background
-                    final_image = self._create_blurred_background_composite(pil_image, content_box, target_width, target_height, verbose)
-
-            else: # --- Standard Landscape or Square Image Processing ---
-                if verbose: print("Standard landscape/square processing.")
+            if use_composite:
+                final_image = self._create_blurred_background_composite(pil_image, target_width, target_height, verbose)
+            else:
+                # Proceed with the standard smart crop
+                if verbose: print("Standard crop processing.")
                 crop_rect = self.calculate_smart_crop(original_width, original_height, faces, target_width, target_height)
                 
+                # The new algorithm is much safer, but a final validation is still good practice.
                 if faces and not self.validate_faces_in_crop(faces, crop_rect):
                     if verbose: print("Warning: Initial crop would cut faces. Recalculating with safety priority...")
+                    # This safety crop is a simple fallback, but the main algorithm should prevent this.
                     crop_rect = self._get_safety_crop(faces, original_width, original_height, target_ratio)
 
                 cropped = pil_image.crop(crop_rect)
