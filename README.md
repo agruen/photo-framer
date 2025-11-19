@@ -1,214 +1,101 @@
-# Photo Frame Slideshow Generator
+# Photo Frame Slideshow Server
 
-A complete Python toolkit and web server for creating beautiful digital photo frame slideshows. Features intelligent face-aware cropping, weather integration, and a modern web admin interface for managing multiple slideshows.
+A complete, dockerized solution for creating beautiful digital photo frame slideshows. Features **Smart Body-Aware Cropping (V2)**, weather integration, and a modern web interface.
 
-## ✨ New Features
+## ✨ Key Features
 
-🚀 **Latest Updates:**
-- **🎯 First-Time Setup Wizard**: No configuration files needed - set up everything via web interface
-- **📸 Add Photos to Slideshows**: Update existing slideshows with more photos
-- **💾 Download Slideshows**: Package entire slideshows for offline/local use
-- **📁 Folder Upload**: Select entire photo folders directly (no ZIP required!)
-- **⚡ Batch Processing**: Handles hundreds or thousands of images efficiently
-- **📊 Real-time Progress**: Watch individual file uploads with live progress bars
-- **🧠 Memory Optimized**: Processes files in small batches to avoid memory issues
-
-## Complete Dockerized Solution
-
-🖥️ **Web Server with Admin Interface:**
-- **Dual Upload Options**: Upload entire folders OR ZIP files via drag-and-drop
-- **Background Processing**: Real-time progress updates with WebSocket notifications
-- **Secure Sharing**: Generate 256-character random URLs for sharing slideshows
-- **Multi-user Hosting**: Host multiple slideshows simultaneously 
-- **Cross-platform**: Works on AMD64 and ARM64 (Raspberry Pi compatible)
-
-💻 **Legacy Command Line Tools:**
-- Original face cropping script: `face_crop_tool.py`
-- Slideshow generator: `slideshow_generator.py`
-- Simple runner: `run.sh`
-
-## Features
-
-### Photo Upload & Processing
-- **Multiple Upload Methods**: Choose between folder upload or ZIP file upload
-- **Scalable Processing**: Handles 10s to 1000s of images with batch processing
-- **Advanced Face Detection**: Multi-method approach using DNN models and Haar cascade classifiers
-- **Intelligent Cropping**: Rule-of-thirds composition with sophisticated face-aware positioning
-- **Enhanced Detection**: Eye-based face estimation as fallback, with duplicate removal
-- **Smart Composition**: Positions faces optimally using portrait photography principles
-- **Adaptive Image Enhancement**: Dynamic sharpening and quality optimization based on scaling
-- **Multiple Face Support**: Handles complex group photos with many faces
-- **Quality Preservation**: LANCZOS resampling with progressive JPEG optimization
-
-### Slideshow Generation  
-- **HTML Slideshow**: Full-screen responsive slideshow optimized for digital photo frames
-- **Weather Integration**: Real-time weather display using OpenWeatherMap API
-- **Digital Clock**: Live 12-hour format clock display with automatic updates
-- **Auto Image Rotation**: Random image changes every 60 seconds
-- **Responsive Design**: Configurable screen dimensions for any display device
-- **Elegant Overlays**: Weather and clock with attractive text shadows for readability
-
-## Quick Start
-
-### 🖥️ Web Server Setup (Recommended)
-
-**Simple 2-step setup - No configuration files needed!**
-
-1. **Clone and start:**
-   ```bash
-   git clone <your-repo>
-   cd Photo-Framer
-   docker compose up -d
-   ```
-
-2. **Complete setup wizard:**
-   - Open http://localhost:8012 in your browser
-   - On first run, you'll see a setup wizard
-   - Set your admin password (min 8 characters)
-   - Configure default screen resolution
-   - Click "Complete Setup"
-   - Login and start creating slideshows!
-
-3. **Create slideshows:**
-   - **Option A**: Click "Select Folder" to upload entire photo folders (thousands of images!)
-   - **Option B**: Drag and drop ZIP file with photos (legacy method)
-   - Configure screen size and weather settings
-   - Watch real-time batch processing with live progress bars
-   - Generate secure URLs to share
-   - **NEW**: Add more photos to existing slideshows
-   - **NEW**: Download slideshows for offline use
-
-📖 **Full server documentation:** [README-SERVER.md](README-SERVER.md)
-
-**Note:** Settings are persisted in `./volumes/db/config.json`. To reset and run setup again, delete `./volumes/db/.setup_complete`.
+*   **Smart Body-Aware Cropping (V2)**:
+    *   **Face Safety**: Uses MediaPipe to strictly ensure faces are *never* cut off.
+    *   **Max Context**: Preserves the maximum possible background context.
+    *   **Pose Optimization**: Intelligently shifts the crop to include as much of the person's body/pose as possible (e.g., arms, torso) without sacrificing face visibility.
+*   **Dockerized**: Runs anywhere (Mac, Linux, Raspberry Pi/ARM64).
+*   **Web Interface**:
+    *   Upload entire folders or ZIP files.
+    *   Real-time progress tracking.
+    *   Manage multiple slideshows.
+*   **Digital Frame Mode**:
+    *   Full-screen responsive slideshow.
+    *   Live clock and weather (OpenWeatherMap).
+    *   Auto-rotation (60s).
 
 ---
 
-### 💻 Command Line Setup (Original)
+## 🚀 Quick Start (Docker)
 
-1. **Quick Setup:**
-   ```bash
-   git clone <your-repo>
-   cd Photo-Framer
-   ./run_complete.sh
-   ```
+The easiest way to run the server is with Docker.
 
-2. **Manual Setup:**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install opencv-python Pillow numpy
-   ```
-
-## Usage
-
-### Web Interface (Recommended)
+### 1. Start the Server
 ```bash
-./start-server.sh                    # Start web server
-# Open http://localhost:5000 in browser
+git clone https://github.com/agruen/photo-framer.git
+cd photo-framer
+docker compose up -d
 ```
 
-### Command Line Tools (Legacy)
+### 2. Setup
+1.  Open **http://localhost:8012** in your browser.
+2.  Follow the setup wizard (create admin password, set resolution).
+3.  Upload photos via the web interface.
+
+---
+
+## 🛠️ Standalone Tools
+
+You can use the intelligent cropping logic without running the full web server.
+
+### Verification Tool (`verify_crop.py`)
+Visualize how the cropper makes decisions. This draws the Face (Red), Body (Blue), and Final Crop (Yellow) on an image.
+
+**Run via Docker (Recommended):**
 ```bash
-./run.sh --input photos --output cropped_photos
+# Build the image first
+docker build -t photo-framer .
+
+# Run verification on a local image
+docker run --rm \
+  -v "$(pwd):/app" \
+  -v "/path/to/your/photos:/photos" \
+  photo-framer \
+  python3 verify_crop.py /photos/input.jpg /photos/debug_output.jpg
 ```
 
+### Batch Cropper (`face_crop_tool.py`)
+Process a folder of images via command line.
 
-## How It Works
-
-1. **Multi-Method Face Detection**: 
-   - Attempts DNN-based face detection for highest accuracy
-   - Falls back to multiple Haar cascade configurations
-   - Uses eye detection to estimate face regions when needed
-   - Removes duplicate detections automatically
-
-2. **Advanced Composition Algorithm**:
-   - Calculates optimal face positioning using rule of thirds
-   - Evaluates multiple crop candidates for best composition
-   - Ensures all faces are preserved with dynamic padding
-   - Applies portrait photography principles for pleasing results
-
-3. **Smart Image Processing**:
-   - Adaptive sharpening based on scaling factors
-   - Subtle contrast and saturation enhancement
-   - Progressive JPEG optimization for smaller files
-   - High-quality LANCZOS resampling for final resize
-
-## Fallback Behavior
-
-If no faces are detected in an image, the tool will:
-- Crop from the center of the image
-- Maintain the target aspect ratio
-- Provide the best possible crop of the original image
-
-## Supported Formats
-
-- JPEG (.jpg, .jpeg)
-- PNG (.png) 
-- BMP (.bmp)
-- TIFF (.tiff, .tif)
-- WEBP (.webp)
-
-## Output
-
-- All cropped images are saved with `_cropped` suffix
-- Output format matches input format
-- Images are saved with high quality (95% JPEG quality)
-- Exact dimensions: 1280x800 pixels (or custom dimensions specified)
-
-## Web Interface Example
-
-When uploading a folder with hundreds of photos, you'll see:
-
-```
-🖼️ Photo Frame Slideshow Creator
-=================================
-
-📁 Selected folder: "Family Photos 2024"
-📸 Images found: 847
-💾 Total size: 2.3 GB
-
-🚀 Upload Method: Folder Upload
-
-📤 Uploading batch 1...
-Files 1-20 of 847
-Progress: 847/847 files (100%)
-
-✓ Processed 1/847: IMG_001.jpg
-✓ Processed 2/847: IMG_002.jpg
-✓ Processed 3/847: IMG_003.jpg
-...
-
-🎭 Processing images with face detection...
-⚡ Found faces in 623 photos
-🎯 Applied intelligent cropping to all images
-
-✅ Slideshow generated successfully!
-🔗 Secure URL: https://yourserver.com/s/Abc123...
+```bash
+docker run --rm \
+  -v "$(pwd):/app" \
+  -v "/path/to/input:/input" \
+  -v "/path/to/output:/output" \
+  photo-framer \
+  python3 face_crop_tool.py --input /input --output /output --width 1280 --height 800
 ```
 
-## Slideshow Features
+---
 
-- **Full-Screen Display**: Optimized for any screen resolution
-- **Automatic Image Rotation**: Random image every 60 seconds
-- **Live Clock**: Updates every second with current time
-- **Weather Display**: Shows current temperature and weather icon
-- **Responsive Design**: Works on any device or screen size
-- **Error Handling**: Graceful fallback if weather API is unavailable
-- **Secure URLs**: Each slideshow gets a unique 256-character access URL
-- **Multi-device Access**: Share slideshows across multiple devices simultaneously
+## 🧠 How It Works (Smart Crop V2)
 
-## Browser Support
+The cropping engine uses a hierarchy of needs to determine the perfect crop:
 
-The folder upload feature requires a modern browser that supports:
-- **HTML5 File API**: For folder selection (`webkitdirectory`)
-- **Drag & Drop API**: For drag-and-drop functionality
-- **Fetch API**: For batch file uploads
+1.  **Maximize Context**: It starts with the largest possible crop that fits the target aspect ratio (e.g., 16:10).
+2.  **Face Safety Constraint**: It calculates a "Valid Range" where the crop *must* exist to keep all faces fully visible.
+3.  **Pose Optimization**: Within that valid range, it slides the crop window to maximize overlap with the detected body (Pose).
+    *   *Horizontal*: Centers on the body to capture width/arms.
+    *   *Vertical*: Aligns with the top of the body to capture head/torso/legs.
 
-**Supported Browsers:**
-- ✅ Chrome/Chromium (all versions)
-- ✅ Firefox (50+)
-- ✅ Safari (11.1+)
-- ✅ Edge (79+)
+If a face cannot fit (e.g., extreme close-up vs landscape target), it falls back to a high-quality blurred background composite.
 
-*ZIP upload works in all browsers as fallback option*
+---
+
+## 💻 Development
+
+### Requirements
+*   Docker & Docker Compose
+*   Python 3.11+ (if running locally without Docker)
+
+### Local Setup (No Docker)
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements-server.txt
+python -m app.app
+```
