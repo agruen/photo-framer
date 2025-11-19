@@ -10,7 +10,6 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     build-essential \
-    cmake \
     python3-dev \
     libffi-dev \
     libssl-dev \
@@ -21,9 +20,6 @@ RUN apt-get update && apt-get install -y \
     libpng-dev \
     libheif-dev \
     libde265-dev \
-    libopenblas-dev \
-    liblapack-dev \
-    libgtk-3-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
