@@ -54,7 +54,7 @@ docker compose build web
 docker run --rm \
   -v "$(pwd):/app" \
   -v "/path/to/your/photos:/photos" \
-  photo-framer \
+  photo-framer-web \
   python3 verify_crop.py /photos/input.jpg /photos/debug_output.jpg
 ```
 
@@ -66,7 +66,7 @@ docker run --rm \
   -v "$(pwd):/app" \
   -v "/path/to/input:/input" \
   -v "/path/to/output:/output" \
-  photo-framer \
+  photo-framer-web \
   python3 face_crop_tool.py --input /input --output /output --width 1280 --height 800
 ```
 
