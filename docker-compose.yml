@@ -3,6 +3,7 @@ services:
     build:
       context: .
       network: host
+    image: photo-framer
     ports:
       - "8012:5000"
     volumes:

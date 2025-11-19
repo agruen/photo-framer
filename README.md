@@ -47,8 +47,8 @@ Visualize how the cropper makes decisions. This draws the Face (Red), Body (Blue
 
 **Run via Docker (Recommended):**
 ```bash
-# Build the image first
-docker build -t photo-framer .
+# Build the image first (uses host network to avoid DNS issues)
+docker compose build web
 
 # Run verification on a local image
 docker run --rm \
