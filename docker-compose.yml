@@ -4,7 +4,7 @@ services:
       context: .
       network: host
     ports:
-      - "8012:5000"
+      - "8016:5000"
     volumes:
       - ./volumes/uploads:/app/uploads
       - ./volumes/slideshows:/app/slideshows

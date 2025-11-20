@@ -6,7 +6,8 @@
       "Bash(git add:*)",
       "Bash(git commit -m \"$(cat <<''EOF''\nAdd first-time setup wizard and download feature\n\nFeatures added:\n- 🎯 Web-based first-time setup wizard (no config files needed!)\n  - Beautiful modern UI with gradient design\n  - Admin password setup with strength indicator\n  - Default screen resolution configuration\n  - Settings persist in volumes/db/config.json\n  - Automatic setup completion tracking\n\n- 💾 Download slideshow feature\n  - Package entire slideshows as ZIP for offline use\n  - Includes HTML + all processed images\n  - Available from dashboard and detail pages\n  - Perfect for local digital photo frames\n\n- 🔧 Configuration improvements\n  - Config loaded from setup wizard on first run\n  - Auto-generates secure random secret key\n  - Environment variables still work as overrides\n  - Zero-config docker compose deployment\n\n- 📖 Updated README with new 2-step quick start\n\nFiles modified:\n- app/setup.py (new) - Setup utility module\n- app/config.py - Dynamic config loading\n- app/app.py - Setup wizard route + download route\n- app/templates/setup.html (new) - Setup wizard UI\n- docker-compose.yml - Optional env vars\n- README.md - Updated quick start guide\n\n🚀 Generated with Claude Code\nEOF\n)\")",
       "Bash(git push:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(git tag:*)"
     ],
     "deny": [],
     "ask": []
