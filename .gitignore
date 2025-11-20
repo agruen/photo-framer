@@ -124,6 +124,8 @@ volumes/redis/*
 volumes/uploads/*
 volumes/slideshows/*
 volumes/temp/*
+volumes/input/*
+volumes/output/*
 
 # Keep directory structure but ignore contents
 !volumes/db/.gitkeep
@@ -134,6 +136,7 @@ volumes/temp/*
 
 # Local config overrides
 docker-compose.override.yml
+.claude/settings.local.json
 
 # Temporary files
 *.tmp
