@@ -86,6 +86,10 @@ class SlideshowURL(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     access_count = db.Column(db.Integer, default=0)
     last_accessed = db.Column(db.DateTime)
+
+    # Per-link weather overrides (optional - if null, use slideshow defaults)
+    weather_zip = db.Column(db.String(20))
+    weather_api_key = db.Column(db.String(100))
     
     def __repr__(self):
         return f'<SlideshowURL {self.url_key[:20]}...>'
@@ -116,7 +120,9 @@ class SlideshowURL(db.Model):
             'name': self.name,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'access_count': self.access_count,
-            'last_accessed': self.last_accessed.isoformat() if self.last_accessed else None
+            'last_accessed': self.last_accessed.isoformat() if self.last_accessed else None,
+            'weather_zip': self.weather_zip,
+            'weather_api_key': self.weather_api_key
         }
 
 

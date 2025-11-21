@@ -40,6 +40,14 @@ COPY slideshow_generator.py .
 # Copy new server application
 COPY app/ ./app/
 
+# Copy ML models for object detection
+COPY models/ ./models/
+
+# Copy migrations and entrypoint script
+COPY migrations/ ./migrations/
+COPY docker-entrypoint.sh .
+RUN chmod +x docker-entrypoint.sh
+
 
 # Create necessary directories with proper permissions
 RUN mkdir -p uploads slideshows db temp && \
@@ -54,6 +62,9 @@ HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
 
 # Expose port
 EXPOSE 5000
+
+# Use entrypoint script to run migrations before starting app
+ENTRYPOINT ["./docker-entrypoint.sh"]
 
 # Default command - simple Flask server
 CMD ["python", "-m", "app.app"]

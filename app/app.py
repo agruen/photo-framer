@@ -412,24 +412,30 @@ def create_app(config_class=Config):
     def generate_url(slideshow_id):
         """Generate a new access URL for a slideshow"""
         slideshow = Slideshow.query.get_or_404(slideshow_id)
-        
+
         if slideshow.status != 'completed':
             flash('Cannot generate URL for incomplete slideshow', 'error')
             return redirect(url_for('slideshow_detail', slideshow_id=slideshow_id))
-        
+
         # Generate unique URL
         url_key = SlideshowURL.generate_unique_key()
         url_name = request.form.get('url_name', '').strip()
-        
+
+        # Get per-link weather configuration (optional overrides)
+        weather_zip = request.form.get('weather_zip', '').strip()
+        weather_api_key = request.form.get('weather_api_key', '').strip()
+
         slideshow_url = SlideshowURL(
             slideshow_id=slideshow_id,
             url_key=url_key,
-            name=url_name if url_name else None
+            name=url_name if url_name else None,
+            weather_zip=weather_zip if weather_zip else None,
+            weather_api_key=weather_api_key if weather_api_key else None
         )
-        
+
         db.session.add(slideshow_url)
         db.session.commit()
-        
+
         flash('New access URL generated!', 'success')
         return redirect(url_for('slideshow_detail', slideshow_id=slideshow_id))
     
@@ -608,26 +614,26 @@ def create_app(config_class=Config):
         """Public slideshow viewing endpoint"""
         slideshow_url = SlideshowURL.query.filter_by(url_key=url_key).first_or_404()
         slideshow = slideshow_url.slideshow
-        
+
         if slideshow.status != 'completed':
             abort(404)  # Hide incomplete slideshows
-        
+
         # Record access
         slideshow_url.record_access()
-        
+
         # Read the original slideshow HTML file
         html_path = os.path.join(app.config['SLIDESHOW_FOLDER'], slideshow.folder_name, 'slideshow.html')
         if not os.path.exists(html_path):
             abort(404)
-        
+
         # Read and modify the HTML to include correct image paths
         with open(html_path, 'r') as f:
             html_content = f.read()
-        
+
         # Find the image array and replace relative paths with full URLs
         import re
         import json
-        
+
         # Extract the current images array
         images_match = re.search(r'var images = (\[.*?\]);', html_content)
         if images_match:
@@ -637,7 +643,28 @@ def create_app(config_class=Config):
             # Replace in the HTML
             new_images_js = f'var images = {json.dumps(full_url_images)};'
             html_content = html_content.replace(images_match.group(0), new_images_js)
-        
+
+        # Inject per-link weather configuration if present
+        if slideshow_url.weather_zip or slideshow_url.weather_api_key:
+            weather_override_script = '<script>\n'
+            if slideshow_url.weather_zip:
+                # Override the zip code by replacing the startSlideshow call
+                zip_pattern = r"startSlideshow\('([^']*)'\);"
+                new_zip_call = f"startSlideshow('{slideshow_url.weather_zip}');"
+                html_content = re.sub(zip_pattern, new_zip_call, html_content)
+
+            if slideshow_url.weather_api_key:
+                # Override the API key before startSlideshow is called
+                weather_override_script += f"  var apiKey = '{slideshow_url.weather_api_key}';\n"
+
+            weather_override_script += '</script>\n'
+
+            # Inject the script just before the startSlideshow call
+            if slideshow_url.weather_api_key:
+                # Find the location where startSlideshow is called and inject before it
+                start_pattern = r"(\s*startSlideshow\(')"
+                html_content = re.sub(start_pattern, weather_override_script + r'\1', html_content, count=1)
+
         return html_content, 200, {'Content-Type': 'text/html'}
     
     @app.route('/s/<url_key>/<path:filename>')

@@ -170,8 +170,16 @@
                             <div class="d-flex justify-content-between align-items-start">
                                 <div class="flex-grow-1">
                                     {% if url.name %}
-                                        <strong>{{ url.name }}</strong><br>
+                                        <strong>{{ url.name }}</strong>
+                                    {% else %}
+                                        <strong class="text-muted">Unnamed URL</strong>
                                     {% endif %}
+                                    {% if url.weather_zip or url.weather_api_key %}
+                                        <span class="badge bg-info ms-2" title="Custom weather configuration">
+                                            <i class="fas fa-cloud-sun"></i> Custom Weather
+                                        </span>
+                                    {% endif %}
+                                    <br>
                                     <small class="text-muted font-monospace">
                                         {{ url.url_key[:32] }}...
                                     </small><br>
@@ -183,6 +191,17 @@
                                         {% endif %}
                                         • Created {{ url.created_at.strftime('%m/%d/%Y') }}
                                     </small>
+                                    {% if url.weather_zip or url.weather_api_key %}
+                                        <br>
+                                        <small class="text-info">
+                                            <i class="fas fa-map-marker-alt"></i>
+                                            {% if url.weather_zip %}
+                                                ZIP: {{ url.weather_zip }}
+                                            {% else %}
+                                                ZIP: {{ slideshow.weather_zip }} (default)
+                                            {% endif %}
+                                        </small>
+                                    {% endif %}
                                 </div>
                                 <div class="dropdown">
                                     <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown">
@@ -266,10 +285,42 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label for="url_name" class="form-label">URL Name (Optional)</label>
-                        <input type="text" class="form-control" id="url_name" name="url_name" 
+                        <input type="text" class="form-control" id="url_name" name="url_name"
                                placeholder="e.g., For Family, For Friends">
                         <div class="form-text">Give this URL a memorable name to help you organize multiple URLs</div>
                     </div>
+
+                    <hr>
+
+                    <h6 class="mb-3">Weather Configuration (Optional)</h6>
+                    <p class="text-muted small">Override the slideshow's default weather settings for this specific link. Leave blank to use slideshow defaults.</p>
+
+                    <div class="mb-3">
+                        <label for="weather_zip" class="form-label">Weather ZIP Code</label>
+                        <input type="text" class="form-control" id="weather_zip" name="weather_zip"
+                               placeholder="{% if slideshow.weather_zip %}{{ slideshow.weather_zip }} (default){% else %}e.g., 94102{% endif %}">
+                        <div class="form-text">
+                            {% if slideshow.weather_zip %}
+                                Slideshow default: {{ slideshow.weather_zip }}
+                            {% else %}
+                                No default weather ZIP configured for this slideshow
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="weather_api_key" class="form-label">OpenWeatherMap API Key</label>
+                        <input type="text" class="form-control" id="weather_api_key" name="weather_api_key"
+                               placeholder="{% if slideshow.weather_api_key %}{{ slideshow.weather_api_key[:8] }}... (default){% else %}Your OpenWeatherMap API key{% endif %}">
+                        <div class="form-text">
+                            {% if slideshow.weather_api_key %}
+                                Slideshow default: {{ slideshow.weather_api_key[:8] }}...
+                            {% else %}
+                                No default weather API key configured for this slideshow
+                            {% endif %}
+                        </div>
+                    </div>
+
                     <div class="alert alert-info">
                         <small>
                             <i class="fas fa-info-circle"></i>

@@ -48,8 +48,24 @@ class FaceAwareCropper:
     HEADROOM_PADDING_LEVELS = [0.50, 0.40, 0.30, 0.20, 0.15]  # Progressive headroom reduction to avoid composite mode
     COMPOSITE_PADDING = 0.10  # 10% breathing room for composite mode
 
+    # Priority categories for object detection (ordered by importance)
+    PRIORITY_OBJECTS = {
+        # High priority (1) - Pets & Animals
+        'dog': 1, 'cat': 1, 'bird': 1, 'horse': 1,
+        # High priority (1) - Food
+        'cake': 1, 'pizza': 1,
+        # Medium priority (2) - Vehicles
+        'car': 2, 'motorcycle': 2, 'bicycle': 2, 'airplane': 2, 'boat': 2, 'truck': 2, 'bus': 2,
+        # Medium priority (2) - Large objects
+        'surfboard': 2, 'skateboard': 2,
+        # Low priority (3) - Background objects
+        'couch': 3, 'chair': 3, 'dining table': 3, 'potted plant': 3, 'bed': 3, 'bench': 3
+    }
+
+    OBJECT_PADDING = 0.30  # 30% breathing room for object crops (more generous than faces)
+
     def __init__(self):
-        """Initialize MediaPipe face and pose detectors."""
+        """Initialize MediaPipe face, pose, and object detectors."""
         self.mp_face_detection = mp_face.solutions.face_detection
         self.mp_pose = mp_face.solutions.pose
 
@@ -73,6 +89,33 @@ class FaceAwareCropper:
             enable_segmentation=False,
             min_detection_confidence=0.75
         )
+
+        # Object Detector (for non-person photos)
+        # Initialize to None first to ensure attribute always exists
+        self.object_detector = None
+
+        try:
+            from mediapipe.tasks import python
+            from mediapipe.tasks.python import vision
+
+            # Path to the model file
+            model_path = os.path.join(os.path.dirname(__file__), 'models', 'efficientdet_lite0.tflite')
+
+            if os.path.exists(model_path):
+                base_options = python.BaseOptions(model_asset_path=model_path)
+                options = vision.ObjectDetectorOptions(
+                    base_options=base_options,
+                    score_threshold=0.5,  # Lower than faces (objects vary more)
+                    max_results=10,
+                    category_allowlist=list(self.PRIORITY_OBJECTS.keys())
+                )
+                self.object_detector = vision.ObjectDetector.create_from_options(options)
+            else:
+                print(f"Warning: Object detection model not found at {model_path}")
+                self.object_detector = None
+        except Exception as e:
+            print(f"Warning: Could not initialize object detector: {e}")
+            self.object_detector = None
 
     def detect_faces(self, image):
         """
@@ -158,6 +201,232 @@ class FaceAwareCropper:
             return BBox(min_x, min_y, max_x - min_x, max_y - min_y)
 
         return None
+
+    def detect_objects(self, pil_image):
+        """
+        Detect objects in image using MediaPipe Object Detector.
+
+        Args:
+            pil_image: PIL Image object
+
+        Returns:
+            List of dicts with:
+            - bbox: (xmin, ymin, width, height) normalized [0-1]
+            - category: str (e.g., 'dog', 'car')
+            - score: float confidence
+            - priority: int (1=highest, 3=lowest)
+        """
+        if not self.object_detector:
+            return []
+
+        try:
+            from mediapipe.tasks.python import vision
+            import mediapipe as mp
+
+            # Convert PIL to MediaPipe Image format
+            mp_image = mp.Image(
+                image_format=mp.ImageFormat.SRGB,
+                data=np.array(pil_image)
+            )
+
+            # Detect objects
+            results = self.object_detector.detect(mp_image)
+
+            if not results.detections:
+                return []
+
+            # Convert to normalized bboxes with priority
+            objects = []
+            for detection in results.detections:
+                bbox = detection.bounding_box
+                category = detection.categories[0].category_name
+                score = detection.categories[0].score
+
+                # Normalize bbox coordinates
+                img_width, img_height = pil_image.size
+                normalized_bbox = {
+                    'xmin': bbox.origin_x / img_width,
+                    'ymin': bbox.origin_y / img_height,
+                    'width': bbox.width / img_width,
+                    'height': bbox.height / img_height
+                }
+
+                objects.append({
+                    'bbox': normalized_bbox,
+                    'category': category,
+                    'score': score,
+                    'priority': self.PRIORITY_OBJECTS.get(category, 3)
+                })
+
+            return objects
+
+        except Exception as e:
+            print(f"Warning: Object detection failed: {e}")
+            return []
+
+    def _select_primary_object(self, objects):
+        """
+        Select the most important object(s) to center crop around.
+
+        Strategy:
+        1. Sort by priority (1 > 2 > 3)
+        2. Within same priority, sort by size (area)
+        3. Group nearby objects of same priority
+        4. Return combined bounding box
+
+        Args:
+            objects: List of object dicts from detect_objects()
+
+        Returns:
+            Dict with:
+            - bbox: Combined normalized bounding box
+            - objects: List of grouped objects
+            - category: Primary object category
+        """
+        if not objects:
+            return None
+
+        # Sort by priority first, then by area (descending)
+        sorted_objects = sorted(
+            objects,
+            key=lambda x: (x['priority'], -self._bbox_area(x['bbox']))
+        )
+
+        # Take highest priority object
+        primary = sorted_objects[0]
+        primary_priority = primary['priority']
+
+        # Group all objects with same priority that are nearby
+        grouped = [primary]
+        for obj in sorted_objects[1:]:
+            if obj['priority'] == primary_priority:
+                # Check if nearby (within 20% of image)
+                if self._objects_nearby(primary['bbox'], obj['bbox'], threshold=0.2):
+                    grouped.append(obj)
+
+        # Combine bounding boxes
+        combined_bbox = self._merge_bboxes([obj['bbox'] for obj in grouped])
+
+        return {
+            'bbox': combined_bbox,
+            'objects': grouped,
+            'category': primary['category']
+        }
+
+    def _bbox_area(self, bbox):
+        """Calculate area of a normalized bounding box."""
+        return bbox['width'] * bbox['height']
+
+    def _objects_nearby(self, bbox1, bbox2, threshold=0.2):
+        """
+        Check if two bounding boxes are nearby (within threshold distance).
+
+        Args:
+            bbox1, bbox2: Normalized bounding boxes
+            threshold: Maximum distance between centers (as fraction of image)
+
+        Returns:
+            True if objects are nearby
+        """
+        # Calculate centers
+        center1_x = bbox1['xmin'] + bbox1['width'] / 2
+        center1_y = bbox1['ymin'] + bbox1['height'] / 2
+        center2_x = bbox2['xmin'] + bbox2['width'] / 2
+        center2_y = bbox2['ymin'] + bbox2['height'] / 2
+
+        # Calculate distance
+        distance = ((center1_x - center2_x)**2 + (center1_y - center2_y)**2)**0.5
+
+        return distance < threshold
+
+    def _merge_bboxes(self, bboxes):
+        """
+        Merge multiple normalized bounding boxes into one that encompasses all.
+
+        Args:
+            bboxes: List of normalized bounding box dicts
+
+        Returns:
+            Combined normalized bounding box
+        """
+        if not bboxes:
+            return None
+
+        min_x = min(bbox['xmin'] for bbox in bboxes)
+        min_y = min(bbox['ymin'] for bbox in bboxes)
+        max_x = max(bbox['xmin'] + bbox['width'] for bbox in bboxes)
+        max_y = max(bbox['ymin'] + bbox['height'] for bbox in bboxes)
+
+        return {
+            'xmin': min_x,
+            'ymin': min_y,
+            'width': max_x - min_x,
+            'height': max_y - min_y
+        }
+
+    def _calculate_object_crop(self, image_width, image_height, object_group, target_aspect):
+        """
+        Calculate optimal crop around detected object(s).
+
+        Similar to face crop logic but adapted for objects:
+        - Less headroom needed (objects don't need top bias)
+        - More breathing room (30% padding vs 15% for faces)
+        - Center-biased rather than top-biased
+
+        Args:
+            image_width, image_height: Image dimensions
+            object_group: Dict from _select_primary_object()
+            target_aspect: Target aspect ratio (width/height)
+
+        Returns:
+            Tuple (crop_x, crop_y, crop_width, crop_height, mode) or (None, 'failed')
+        """
+        # Calculate target crop dimensions at correct aspect ratio
+        if image_width / image_height > target_aspect:
+            # Image is wider than target
+            target_height_px = image_height
+            target_width_px = int(target_height_px * target_aspect)
+        else:
+            # Image is taller than target
+            target_width_px = image_width
+            target_height_px = int(target_width_px / target_aspect)
+
+        # Get object bbox with padding
+        obj_bbox = object_group['bbox']
+        obj_xmin = obj_bbox['xmin'] * image_width
+        obj_ymin = obj_bbox['ymin'] * image_height
+        obj_width = obj_bbox['width'] * image_width
+        obj_height = obj_bbox['height'] * image_height
+
+        # Add padding (30% breathing room for objects)
+        padding_x = obj_width * self.OBJECT_PADDING
+        padding_y = obj_height * self.OBJECT_PADDING
+
+        obj_xmin_padded = max(0, obj_xmin - padding_x)
+        obj_ymin_padded = max(0, obj_ymin - padding_y)
+        obj_xmax_padded = min(image_width, obj_xmin + obj_width + padding_x)
+        obj_ymax_padded = min(image_height, obj_ymin + obj_height + padding_y)
+
+        padded_width = obj_xmax_padded - obj_xmin_padded
+        padded_height = obj_ymax_padded - obj_ymin_padded
+
+        # Check if object fits in target crop
+        if padded_width > target_width_px or padded_height > target_height_px:
+            return None, 'too_large'
+
+        # Calculate crop window centered on object
+        obj_center_x = (obj_xmin_padded + obj_xmax_padded) / 2
+        obj_center_y = (obj_ymin_padded + obj_ymax_padded) / 2
+
+        # X-axis: center the object
+        crop_x = int(obj_center_x - target_width_px / 2)
+        crop_x = max(0, min(crop_x, image_width - target_width_px))
+
+        # Y-axis: center the object (not top-biased like faces)
+        crop_y = int(obj_center_y - target_height_px / 2)
+        crop_y = max(0, min(crop_y, image_height - target_height_px))
+
+        return (crop_x, crop_y, target_width_px, target_height_px), 'smart_crop'
 
     def _get_combined_face_bbox(self, faces, image_width, image_height, headroom_padding=0.50):
         """
@@ -487,33 +756,65 @@ class FaceAwareCropper:
 
             # Step 3: Determine strategy
             if not faces:
-                # No faces detected → crop based on image orientation
-                target_aspect = target_width / target_height
-                image_aspect = image_width / image_height
-                is_portrait = image_height > image_width
+                # No faces detected → try object detection
+                if verbose:
+                    print("  → No faces detected, trying object detection...")
 
-                if image_aspect > target_aspect:
-                    crop_height = image_height
-                    crop_width = int(crop_height * target_aspect)
-                else:
-                    crop_width = image_width
-                    crop_height = int(crop_width / target_aspect)
+                objects = self.detect_objects(pil_image)
 
-                # Horizontal centering (always center horizontally)
-                crop_x = (image_width - crop_width) // 2
+                if objects:
+                    # Objects detected → center crop on primary object
+                    primary_object = self._select_primary_object(objects)
 
-                # Vertical positioning (top-align for portraits, center for landscapes)
-                if is_portrait:
-                    crop_y = 0  # Top-align for portrait images (faces/heads usually at top)
                     if verbose:
-                        print("  → No faces detected, using top-aligned crop (portrait)")
-                else:
-                    crop_y = (image_height - crop_height) // 2  # Center for landscape images
-                    if verbose:
-                        print("  → No faces detected, using center crop (landscape)")
+                        print(f"  → Detected {len(objects)} object(s), primary: {primary_object['category']}")
 
-                final_image = pil_image.crop((crop_x, crop_y, crop_x + crop_width, crop_y + crop_height))
-                final_image = final_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                    target_aspect = target_width / target_height
+                    crop_result, mode = self._calculate_object_crop(
+                        image_width, image_height, primary_object, target_aspect
+                    )
+
+                    if crop_result:
+                        crop_x, crop_y, crop_width, crop_height = crop_result
+                        if verbose:
+                            print(f"  → Object-centered crop at ({crop_x}, {crop_y}, {crop_width}x{crop_height})")
+
+                        final_image = pil_image.crop((crop_x, crop_y, crop_x + crop_width, crop_y + crop_height))
+                        final_image = final_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                    else:
+                        # Object too large → fall through to basic crop
+                        if verbose:
+                            print("  → Object too large, using basic crop")
+                        objects = None  # Trigger basic crop below
+
+                if not objects:
+                    # No objects (or object too large) → basic crop based on orientation
+                    target_aspect = target_width / target_height
+                    image_aspect = image_width / image_height
+                    is_portrait = image_height > image_width
+
+                    if image_aspect > target_aspect:
+                        crop_height = image_height
+                        crop_width = int(crop_height * target_aspect)
+                    else:
+                        crop_width = image_width
+                        crop_height = int(crop_width / target_aspect)
+
+                    # Horizontal centering (always center horizontally)
+                    crop_x = (image_width - crop_width) // 2
+
+                    # Vertical positioning (top-align for portraits, center for landscapes)
+                    if is_portrait:
+                        crop_y = 0  # Top-align for portrait images (faces/heads usually at top)
+                        if verbose:
+                            print("  → Using top-aligned crop (portrait)")
+                    else:
+                        crop_y = (image_height - crop_height) // 2  # Center for landscape images
+                        if verbose:
+                            print("  → Using center crop (landscape)")
+
+                    final_image = pil_image.crop((crop_x, crop_y, crop_x + crop_width, crop_y + crop_height))
+                    final_image = final_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
 
             else:
                 # Calculate optimal crop window with progressive padding reduction
